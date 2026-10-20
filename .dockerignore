@@ -1,0 +1,8 @@
+.git
+.issuepilot
+node_modules
+dist
+.env
+.env.*
+.data
+*.sqlite*

@@ -8,3 +8,7 @@ build/
 !.env.example
 __pycache__/
 .pytest_cache/
+*.sqlite
+*.sqlite-*
+.data/
+coverage/
