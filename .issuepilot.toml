@@ -1,0 +1,20 @@
+# IssuePilot configuration for OctoAgent.
+spec = "docs/spec.md"
+conventions = "AGENTS.md"
+check = "./scripts/check.sh"
+base_branch = "main"
+language = "zh"
+
+[automation]
+# Keep issue creation and merging human-gated during initial development.
+auto_merge = false
+auto_ready = false
+max_in_flight = 1
+max_fix_rounds = 3
+max_check_retries = 2
+max_triaged_issues = 8
+
+[agents]
+planner = { cli = "claude", model = "opus" }
+builder = { cli = "claude", model = "" }
+reviewer = { cli = "codex", model = "" }
