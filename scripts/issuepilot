@@ -1,3 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
+unset HTTPS_PROXY HTTP_PROXY ALL_PROXY
 exec /Users/xuxian/Documents/bajie/scripts/issuepilot "$@"
