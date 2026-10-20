@@ -8,3 +8,5 @@ This repository is prepared for development with IssuePilot.
 4. Run `./scripts/issuepilot setup`, then `./scripts/issuepilot plan`.
 
 Issue creation and merging are human-gated in `.issuepilot.toml` until the project workflow is established.
+
+All three IssuePilot roles (`planner`, `builder`, and `reviewer`) use Codex CLI.

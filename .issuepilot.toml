@@ -15,6 +15,6 @@ max_check_retries = 2
 max_triaged_issues = 8
 
 [agents]
-planner = { cli = "claude", model = "opus" }
-builder = { cli = "claude", model = "" }
+planner = { cli = "codex", model = "" }
+builder = { cli = "codex", model = "" }
 reviewer = { cli = "codex", model = "" }
