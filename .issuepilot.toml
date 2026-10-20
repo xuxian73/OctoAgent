@@ -6,9 +6,9 @@ base_branch = "main"
 language = "zh"
 
 [automation]
-# Keep issue creation and merging human-gated during initial development.
-auto_merge = false
-auto_ready = false
+# Start planned work automatically and merge approved PRs automatically.
+auto_merge = true
+auto_ready = true
 max_in_flight = 1
 max_fix_rounds = 3
 max_check_retries = 2
