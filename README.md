@@ -14,7 +14,7 @@ npm run db:migrate
 npm run dev
 ```
 
-访问 http://localhost:3000；`GET /api/health`返回 JSON 存活状态（不表示数据库就绪）。`npm run dev`先编译，再监视编译产物；修改 TypeScript 时另开终端运行`npm exec -- tsc --watch`，浏览器手动刷新。`npm run build && npm start` 可运行编译后的应用。所有命令从仓库根目录执行。
+访问 http://localhost:3000；`GET /api/health`返回 JSON 存活状态（不表示数据库就绪）。`npm run dev`先编译，再启动服务，不会自动监视文件变化；修改 TypeScript 后，按 Ctrl+C 停止服务并重新运行`npm run dev`，然后手动刷新浏览器。即使另开终端运行`npm exec -- tsc --watch`，服务端改动也需要手动重启服务才能生效。`npm run build && npm start` 可运行编译后的应用。所有命令从仓库根目录执行。
 
 `.env` 只由启动/迁移命令读取，已被 Git 和 Docker 忽略。`DATABASE_URL` 为本地 SQLite 文件地址；`HOST`/`PORT` 为监听地址；`APP_URL` 预留为后续绝对 URL 的来源；`SESSION_SECRET` 仅预留，当前无会话功能，不要求填写。后续身份功能必须校验该密钥并仅在服务端使用。不要把真实凭据或个人数据加入测试、代码和日志。
 
