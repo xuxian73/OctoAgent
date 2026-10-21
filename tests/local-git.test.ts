@@ -136,6 +136,7 @@ test("real file -> branch -> Git commit -> diff -> fresh process verifies exact 
     assert.equal(commit.version, 1);
     assert.equal(commit.source!.checksum, f.file.checksum);
     assert.match(state.diffs[0]!.patch, /export const value/);
+    assert.equal(state.diffs[0]!.truncated, false);
     assert.deepEqual(state.pullRequests, []);
     const external = spawnSync("/usr/bin/git", [
       "--git-dir",
@@ -187,6 +188,112 @@ test("real file -> branch -> Git commit -> diff -> fresh process verifies exact 
       () => f.command("run_check", { sha: commit.sha, kind: "test" }),
       /REAL_CHECK_NOT_AVAILABLE/
     );
+  } finally {
+    f.close();
+  }
+});
+
+test("large replacement diffs remain bounded across reopen, download and further imports", async () => {
+  const f = await fixture();
+  try {
+    f.command("initialize_repository");
+    f.command("create_workspace_branch", { branch: "delivery" });
+    for (const letter of ["a", "b"]) {
+      const bytes = Buffer.from(`${letter}\n`.repeat((9 * 1024 * 1024) / 2));
+      const file = f.files.upload(
+        f.seller,
+        {
+          kind: "artifact",
+          resourceId: f.id,
+          version: 1,
+          revision: 0,
+          milestoneId: String(f.current().milestones[0]!.id),
+          sha: "",
+          name: "large.txt",
+          mime: "text/plain",
+          requestKey: `large-file-${letter}`
+        },
+        bytes
+      );
+      await f.files.scan(String(file.id));
+      f.command("import_artifact", {
+        ...f.args,
+        fileId: file.id,
+        requestKey: `import-${letter}`
+      });
+      const state = f.service.read(f.seller, f.id);
+      const diff = state.diffs.at(-1)!;
+      assert.equal(diff.truncated, true);
+      assert.match(diff.patch, /差异预览已截断/);
+      assert.ok(Buffer.byteLength(diff.patch) < 257 * 1024);
+      assert.deepEqual(
+        f.files.download(f.seller, String(file.id)).bytes,
+        bytes
+      );
+      const external = spawnSync(
+        "/usr/bin/git",
+        ["--git-dir", f.dir(), "show", `${diff.sha}:src/source.ts`],
+        { maxBuffer: 10 * 1024 * 1024 }
+      );
+      assert.equal(external.status, 0, external.stderr.toString());
+      assert.deepEqual(external.stdout, bytes);
+    }
+    const script = `import { DatabaseSync } from 'node:sqlite';
+      import { Workspaces } from './dist/packages/database/src/workspaces.js';
+      import { Authorization } from './dist/packages/auth/src/index.js';
+      import { SqliteIdentityStore } from './dist/packages/database/src/identity.js';
+      const db = new DatabaseSync(process.argv[1]);
+      const auth = new Authorization(new SqliteIdentityStore(db), () => 1000);
+      const state = new Workspaces(db, auth).read(auth.issueUserSession('seller'), process.argv[2]);
+      process.stdout.write(JSON.stringify({ commits: state.commits, truncated: state.diffs.map(d => d.truncated) }));
+      db.close();`;
+    const reopened = spawnSync(
+      process.execPath,
+      ["--input-type=module", "-e", script, f.dbPath, f.id],
+      { env: { ...process.env, GIT_REPOSITORY_ROOT: f.root } }
+    );
+    assert.equal(reopened.status, 0, reopened.stderr.toString());
+    assert.deepEqual(JSON.parse(reopened.stdout.toString()), {
+      commits: f.service.read(f.seller, f.id).commits,
+      truncated: [true, true]
+    });
+    // File authorization must not generate presentation diffs at all.
+    const originalDiff = LocalGitProvider.prototype.diff;
+    LocalGitProvider.prototype.diff = () => {
+      throw new Error("unexpected diff during file authorization");
+    };
+    try {
+      const file = f.files.upload(
+        f.seller,
+        {
+          kind: "artifact",
+          resourceId: f.id,
+          version: 1,
+          revision: 0,
+          milestoneId: String(f.current().milestones[0]!.id),
+          sha: "",
+          name: "small.txt",
+          mime: "text/plain",
+          requestKey: "after-large"
+        },
+        f.bytes
+      );
+      await f.files.scan(String(file.id));
+      assert.deepEqual(
+        f.files.download(f.seller, String(file.id)).bytes,
+        f.bytes
+      );
+      f.command("import_artifact", {
+        ...f.args,
+        fileId: file.id,
+        requestKey: "after-large"
+      });
+    } finally {
+      LocalGitProvider.prototype.diff = originalDiff;
+    }
+    const final = f.service.read(f.seller, f.id);
+    assert.equal(final.commits.length, 3);
+    assert.equal(final.branches.delivery, final.commits[2]!.sha);
   } finally {
     f.close();
   }

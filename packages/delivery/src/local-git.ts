@@ -22,6 +22,7 @@ import {
   safePath
 } from "./github.js";
 
+const diffPreviewBytes = 256 * 1024;
 const config =
   "[core]\n\trepositoryformatversion = 0\n\tbare = true\n\tlogallrefupdates = false\n";
 const fail = (code: string): never => {
@@ -76,7 +77,8 @@ export class LocalGitProvider implements GitHubProvider {
   private run(
     dir: string,
     args: string[],
-    input?: Uint8Array | string
+    input?: Uint8Array | string,
+    preview = false
   ): Buffer {
     const result = spawnSync(
       this.executable,
@@ -99,7 +101,7 @@ export class LocalGitProvider implements GitHubProvider {
         cwd: dir,
         input,
         timeout: 30000,
-        maxBuffer: 24 * 1024 * 1024,
+        maxBuffer: preview ? diffPreviewBytes : 24 * 1024 * 1024,
         env: {
           PATH: "/usr/bin:/bin",
           HOME: dir,
@@ -126,6 +128,16 @@ export class LocalGitProvider implements GitHubProvider {
       result.error.code === "ENOENT"
     )
       fail("GIT_UNAVAILABLE");
+    // Only a diff preview may stop at the output cap. All object reads and
+    // mutations still require Git to exit successfully.
+    if (
+      preview &&
+      result.error &&
+      "code" in result.error &&
+      result.error.code === "ENOBUFS" &&
+      result.stdout.length >= diffPreviewBytes
+    )
+      return result.stdout;
     if (result.error || result.status !== 0) fail("GIT_OPERATION_FAILED");
     return result.stdout;
   }
@@ -337,18 +349,33 @@ export class LocalGitProvider implements GitHubProvider {
     this.verify(state, id);
     if (!state.local) return [];
     const dir = this.directory(id, state.local.generation);
-    return state.commits.map(c => ({
-      sha: c.sha,
-      patch: this.run(dir, [
-        "diff",
-        "--no-ext-diff",
-        "--no-textconv",
-        `${sha(c.sha)}^`,
-        c.sha,
-        "--"
-      ]).toString("utf8")
-    }));
+    return state.commits.map(c => {
+      const output = this.run(
+        dir,
+        [
+          "diff",
+          "--no-ext-diff",
+          "--no-textconv",
+          `${sha(c.sha)}^`,
+          c.sha,
+          "--"
+        ],
+        undefined,
+        true
+      );
+      const truncated = output.length >= diffPreviewBytes;
+      return {
+        sha: c.sha,
+        truncated,
+        patch:
+          output.subarray(0, diffPreviewBytes).toString("utf8") +
+          (truncated
+            ? "\n[差异预览已截断：最多显示 256 KiB；提交与来源字节仍完整核验]\n"
+            : "")
+      };
+    });
   }
+
   commit(): never {
     return fail("GIT_SOURCE_ARTIFACT_REQUIRED");
   }

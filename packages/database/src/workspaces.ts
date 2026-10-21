@@ -77,8 +77,10 @@ export class Workspaces {
       state: JSON.parse(String(row.state)) as RepositoryState
     };
   }
-  read(token: string, id: string) {
+  read(token: string, id: string, includeDiffs = true) {
     const { contract, access, row, state } = this.access(token, id);
+    if (!includeDiffs && this.provider instanceof LocalGitProvider)
+      this.provider.verify(state, id);
     return {
       party: access.role,
       actors: [
@@ -108,7 +110,7 @@ export class Workspaces {
         ? "offline-fake"
         : "uninitialized",
       diffs:
-        this.provider instanceof LocalGitProvider
+        includeDiffs && this.provider instanceof LocalGitProvider
           ? this.provider.diff(state, id)
           : [],
       ...state,
@@ -129,7 +131,7 @@ export class Workspaces {
     this.provider.authorize(permission, grants);
     if (contract.status !== "active")
       throw new RequirementError("CONTRACT_NOT_ACTIVE", 409);
-    return this.read(token, id);
+    return this.read(token, id, false);
   }
   command(token: string, id: string, input: Record<string, unknown>) {
     const nested = this.db.isTransaction;

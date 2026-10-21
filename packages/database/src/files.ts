@@ -101,7 +101,7 @@ export class Files {
       const service = new Workspaces(this.db, this.auth);
       const value = write
         ? service.inspect(token, b.resourceId, "artifact")
-        : service.read(token, b.resourceId);
+        : service.read(token, b.resourceId, false);
       if (
         write &&
         (value.version !== b.version ||
