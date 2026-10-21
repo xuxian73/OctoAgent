@@ -15,4 +15,12 @@ jobs:
           cache: npm
       - run: npm ci --no-audit --no-fund
       - name: Run project checks
-        run: ./scripts/check.sh
+        run: |
+          set -o pipefail
+          if ./scripts/check.sh 2>&1 | tee "$RUNNER_TEMP/project-check.log"; then
+            exit 0
+          fi
+          # Keep failing TAP cases visible to reviewers who receive only the log tail.
+          echo "Failed test details:"
+          awk '/^not ok / { failure = 1 } failure { print } /^  \.\.\./ { failure = 0 }' "$RUNNER_TEMP/project-check.log"
+          exit 1
