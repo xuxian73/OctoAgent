@@ -4,6 +4,7 @@ import { Readable } from "node:stream";
 import { IncomingMessage, ServerResponse } from "node:http";
 import { setup } from "./fixtures/contracts.js";
 import { Agents } from "../packages/database/src/agents.js";
+import { Disputes } from "../packages/database/src/disputes.js";
 import { handleRequest } from "../apps/server/src/app.js";
 import {
   Authorization,
@@ -72,6 +73,7 @@ test("owner API creates agents, confirms bounded scopes, isolates credentials an
   const owner = auth.issueUserSession("seller");
   const other = auth.issueUserSession("buyer");
   const service = new Agents(f.db, auth);
+  const disputes = new Disputes(f.db, auth, () => now);
   const call = (
     path: string,
     method = "GET",
@@ -108,11 +110,25 @@ test("owner API creates agents, confirms bounded scopes, isolates credentials an
         undefined,
         undefined,
         undefined,
-        undefined,
+        disputes,
         service
       );
     });
   try {
+    // Both services share the application router after merging main.
+    f.activate();
+    f.command(f.buyer, "transition", { to: "disputed" });
+    const dispute = await call("/api/disputes", "POST", {
+      contractId: f.current().id,
+      confirmed: true
+    });
+    assert.equal(dispute.status, 200);
+    assert.equal(
+      f.db
+        .prepare("SELECT contract_id FROM dispute_cases WHERE id=?")
+        .get(dispute.data.data.id)!.contract_id,
+      f.current().id
+    );
     const created = await call("/api/agents", "POST", {
       kind: "seller",
       capabilities: ["production", "typescript"]
