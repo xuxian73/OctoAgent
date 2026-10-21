@@ -347,3 +347,94 @@ test("buyer evidence page renders structured evidence and clears on identity cha
     globalThis.fetch = original;
   }
 });
+
+test("credentials are rejected before workspace, audit or request persistence", () => {
+  const f = fixture();
+  try {
+    for (const p of ["branch", "commit", "discussion"]) f.grant(p);
+    f.command("create_workspace_branch", { branch: "delivery" });
+    const persisted = () =>
+      [
+        "delivery_workspaces",
+        "contract_events",
+        "delivery_requests"
+      ].map(table => f.db.prepare(`SELECT * FROM ${table}`).all());
+    const before = persisted();
+    const evidence = f.service.read(f.buyer, f.id);
+    // Deliberately invalid placeholders, never real credentials.
+    const samples = [
+      "github_pat_SYNTHETIC_PLACEHOLDER",
+      ...["ghp_", "gho_", "ghu_", "ghs_", "ghr_"].map(
+        prefix => prefix + "SYNTHETIC_PLACEHOLDER"
+      ),
+      ...[
+        "token",
+        "cookie",
+        "password",
+        "secret",
+        "access_token"
+      ].flatMap(key => [
+        JSON.stringify({ [key]: "SYNTHETIC_PLACEHOLDER" }),
+        `{'${key}' : 'SYNTHETIC_PLACEHOLDER'}`
+      ])
+    ];
+    for (const content of samples) {
+      for (const action of ["discuss", "commit", "commit-summary"]) {
+        assert.throws(
+          () =>
+            action === "discuss"
+              ? f.command(action, { text: content })
+              : f.command("commit", {
+                  branch: "delivery",
+                  summary: action === "commit-summary" ? content : "变更",
+                  files: {
+                    "safe.txt": "safe",
+                    "content.txt": action === "commit" ? content : "safe"
+                  }
+                }),
+          /SENSITIVE_CONTENT/
+        );
+        assert.deepEqual(persisted(), before);
+        assert.deepEqual(f.service.read(f.buyer, f.id), evidence);
+      }
+    }
+  } finally {
+    f.db.close();
+  }
+});
+
+test("commits preserve original whitespace, newlines and empty files", () => {
+  const f = fixture();
+  try {
+    for (const p of ["branch", "commit"]) f.grant(p);
+    f.command("create_workspace_branch", { branch: "delivery" });
+    const files = {
+      "indented.txt": "  indented\n\tcontent  \n",
+      "newline.txt": "content\r\n",
+      "empty.txt": "",
+      "whitespace.txt": " \t\n"
+    };
+    f.command("commit", { branch: "delivery", summary: "变更", files });
+    const commit = f.service.read(f.buyer, f.id).commits[0]!;
+    assert.deepEqual(commit.files, files);
+    assert.equal(
+      commit.sha,
+      checksum(JSON.stringify(["delivery", "", files, "变更", 1]))
+    );
+    const before = f.service.read(f.buyer, f.id);
+    for (const invalid of [null, 123, {}, "x".repeat(10001)]) {
+      assert.throws(
+        () =>
+          f.command("commit", {
+            branch: "delivery",
+            summary: "变更",
+            files: { "invalid.txt": invalid }
+          }),
+        /INVALID_TEXT/
+      );
+      assert.deepEqual(f.service.read(f.buyer, f.id), before);
+    }
+  } finally {
+    f.db.close();
+  }
+});

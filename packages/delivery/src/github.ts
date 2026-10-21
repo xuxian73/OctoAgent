@@ -29,16 +29,22 @@ export interface RepositoryState {
   submissions: unknown[];
 }
 export function text(value: unknown): string {
-  if (typeof value !== "string" || !value.trim() || value.length > 10000)
+  const content = fileContent(value);
+  if (!content.trim()) throw new RequirementError("INVALID_TEXT");
+  return content.trim();
+}
+// File contents are validated without normalization: whitespace and empty files matter.
+function fileContent(value: unknown): string {
+  if (typeof value !== "string" || value.length > 10000)
     throw new RequirementError("INVALID_TEXT");
   // Never persist credential-shaped or personal data in delivery text.
   if (
-    /bearer\s|cookie\s*[:=]|token\s*[:=]|password\s*[:=]|secret\s*[:=]|PRIVATE KEY|gh[pousr]_|[\w.+-]+@[\w.-]+\.[a-z]{2,}/i.test(
+    /bearer\s|(?:cookie|token|password|secret)["']?\s*[:=]|PRIVATE KEY|gh[pousr]_|github_pat_|[\w.+-]+@[\w.-]+\.[a-z]{2,}/i.test(
       value
     )
   )
     throw new RequirementError("SENSITIVE_CONTENT");
-  return value.trim();
+  return value;
 }
 export function safePath(value: unknown): string {
   const path = text(value);
@@ -107,7 +113,7 @@ export class FakeGitHubProvider implements GitHubProvider {
     )
       throw new RequirementError("INVALID_FILES");
     const clean = Object.fromEntries(
-      Object.entries(files).map(([p, v]) => [safePath(p), text(v)])
+      Object.entries(files).map(([p, v]) => [safePath(p), fileContent(v)])
     );
     const commit = {
       sha: checksum(
