@@ -221,6 +221,14 @@ export function mountMarket(root: Document) {
     });
     input("detail").click();
   });
+  const linkedTask =
+    typeof location !== "undefined"
+      ? new URLSearchParams(location.search).get("task")
+      : null;
+  if (linkedTask) {
+    input("task").value = linkedTask;
+    input("detail").click();
+  }
 }
 export function renderComparison(
   root: Document,

@@ -47,6 +47,7 @@ export function mountApplication(
     navigate(pathname + "?project=" + encodeURIComponent(project));
   });
   root.addEventListener("session-ended", () => retireContext(root));
+  mountNotifications(root);
 }
 if (typeof document !== "undefined") {
   mountApplication(document, url => location.assign(url), location.pathname);
@@ -64,4 +65,66 @@ if (typeof document !== "undefined") {
     if (document.visibilityState === "visible" && !retired)
       void sessionHeaders().catch(() => {});
   });
+}
+
+export function mountNotifications(root: Document) {
+  const container = root.getElementById("notification-items");
+  const next = root.getElementById(
+    "notification-next"
+  ) as HTMLButtonElement | null;
+  const refresh = root.getElementById("notification-refresh");
+  if (!container || !next || !refresh) return;
+  let cursor: number | null = null;
+  let generation = 0;
+  async function load(after = 0) {
+    const current = ++generation;
+    container!.replaceChildren();
+    next!.hidden = true;
+    try {
+      const page = await apiRequest(
+        "/api/market/notifications?cursor=" + after
+      );
+      if (current !== generation) return;
+      cursor = page.nextCursor;
+      for (const item of page.items) {
+        const row = root.createElement("p");
+        const link = root.createElement("a");
+        link.href = item.href;
+        link.textContent =
+          "需求已变更 · 版本 " + item.version + " · 查看授权详情";
+        const button = root.createElement("button");
+        button.type = "button";
+        button.textContent = item.readAt === null ? "标记已读" : "已读";
+        button.disabled = item.readAt !== null;
+        button.addEventListener("click", () => {
+          button.disabled = true;
+          void apiRequest(
+            "/api/market/notifications/" +
+              encodeURIComponent(item.requirementId) +
+              "/" +
+              item.version +
+              "/read",
+            "POST",
+            {}
+          )
+            .then(() => load(after))
+            .catch(() => load(after));
+        });
+        row.append(link, button);
+        container!.append(row);
+      }
+      if (!page.items.length) container!.textContent = "暂无需求变更通知";
+      next!.hidden = cursor === null;
+    } catch {
+      if (current === generation)
+        container!.textContent = "通知加载失败，请刷新重试";
+    }
+  }
+  refresh.addEventListener("click", () => {
+    void load();
+  });
+  next.addEventListener("click", () => {
+    if (cursor !== null) void load(cursor);
+  });
+  void load();
 }

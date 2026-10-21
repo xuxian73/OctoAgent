@@ -42,7 +42,12 @@ test("shared client carries Cookie/CSRF and retires pending responses and confir
   const project = new Element(),
     main = new Element();
   const root = (Object.assign(new EventTarget(), {
-    getElementById: (id: string) => (id === "project" ? project : main)
+    getElementById: (id: string) =>
+      id === "project"
+        ? project
+        : ["main", "application-context"].includes(id)
+        ? main
+        : null
   }) as unknown) as Document;
   let destination = "",
     calls = 0;

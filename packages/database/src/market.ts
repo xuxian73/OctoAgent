@@ -1,4 +1,4 @@
-import { audited } from "./security.js";
+import { Audit, audited } from "./security.js";
 import { randomUUID, randomBytes } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import {
@@ -107,6 +107,91 @@ export class Market {
     )
       throw new ForbiddenError();
     return { row, draft, access };
+  }
+  // Recipient identity always comes from the session, never from query input.
+  private notificationUser(token: string) {
+    const identity = this.auth.identity(token);
+    if (identity.kind !== "user") throw new ForbiddenError();
+    return identity.id;
+  }
+  notifications(token: string, cursor = 0, limit = 20) {
+    const user = this.notificationUser(token);
+    if (
+      !Number.isSafeInteger(cursor) ||
+      cursor < 0 ||
+      !Number.isSafeInteger(limit) ||
+      limit < 1 ||
+      limit > 100
+    )
+      throw new RequirementError("INVALID_PAGINATION");
+    const items = [];
+    for (const row of this.db
+      .prepare(
+        `SELECT n.rowid AS sequence, n.requirement_id, n.version, r.read_at
+      FROM requirement_notifications n LEFT JOIN requirement_notification_reads r
+      USING (requirement_id, version, user_id)
+      WHERE n.user_id = ? AND n.rowid > ? ORDER BY n.rowid`
+      )
+      .iterate(user, cursor)) {
+      let projectId: string;
+      try {
+        projectId = String(
+          this.task(token, String(row.requirement_id)).row.project_id
+        );
+      } catch (error) {
+        if (error instanceof ForbiddenError) continue;
+        throw error;
+      }
+      items.push({
+        cursor: Number(row.sequence),
+        requirementId: String(row.requirement_id),
+        version: Number(row.version),
+        event: "requirement_changed",
+        readAt: row.read_at === null ? null : Number(row.read_at),
+        href:
+          "/market?project=" +
+          encodeURIComponent(projectId) +
+          "&task=" +
+          encodeURIComponent(String(row.requirement_id))
+      });
+      if (items.length > limit) break;
+    }
+    const more = items.length > limit;
+    if (more) items.pop();
+    return { items, nextCursor: more ? items[items.length - 1]!.cursor : null };
+  }
+  readNotification(token: string, id: string, version: number) {
+    const user = this.notificationUser(token);
+    return this.transaction(() => {
+      if (!Number.isSafeInteger(version) || version < 1)
+        throw new ForbiddenError();
+      const notification = this.db
+        .prepare(
+          "SELECT 1 FROM requirement_notifications WHERE requirement_id = ? AND version = ? AND user_id = ?"
+        )
+        .get(id, version, user);
+      if (!notification) throw new ForbiddenError();
+      this.task(token, id);
+      const result = this.db
+        .prepare(
+          "INSERT OR IGNORE INTO requirement_notification_reads VALUES (?, ?, ?, ?)"
+        )
+        .run(id, version, user, this.now());
+      if (result.changes)
+        new Audit(this.db).append("Market.readNotification", "success", {
+          type: "requirement",
+          id
+        });
+      return {
+        readAt: Number(
+          this.db
+            .prepare(
+              "SELECT read_at FROM requirement_notification_reads WHERE requirement_id = ? AND version = ? AND user_id = ?"
+            )
+            .get(id, version, user)!.read_at
+        )
+      };
+    });
   }
   private open(deadline: number) {
     if (deadline <= this.now())
