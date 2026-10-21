@@ -279,6 +279,7 @@ test("drafts and private metadata require buyer project grants, even for same-or
   try {
     const draft = f.service.create(f.token, "project-a", complete());
     const attachment = f.service.addAttachment(f.token, draft.id, {
+      revision: draft.revision,
       name: "synthetic.txt",
       mime: "text/plain",
       size: 12
@@ -342,7 +343,12 @@ test("attachment validation is server-side and new public metadata waits for a f
   const f = fixture();
   try {
     const draft = f.service.create(f.token, "project-a", complete());
-    const valid = { name: "synthetic.txt", mime: "text/plain", size: 12 };
+    const valid = {
+      revision: draft.revision,
+      name: "synthetic.txt",
+      mime: "text/plain",
+      size: 12
+    };
     for (const invalid of [
       { ...valid, size: MAX_ATTACHMENT_BYTES + 1 },
       { ...valid, size: 0 },
@@ -356,19 +362,38 @@ test("attachment validation is server-side and new public metadata waits for a f
         () => f.service.addAttachment(f.token, draft.id, invalid),
         /INVALID_ATTACHMENT/
       );
+    for (const revision of [undefined, "1", 1.5]) {
+      const rejected = { ...valid, revision };
+      assert.throws(
+        () => f.service.addAttachment(f.token, draft.id, rejected),
+        /REVISION_REQUIRED/
+      );
+    }
     const preview = f.service.preview(f.token, draft.id);
-    f.service.addAttachment(f.token, draft.id, {
+    const added = f.service.addAttachment(f.token, draft.id, {
       ...valid,
       size: MAX_ATTACHMENT_BYTES,
       private: false
     });
+    assert.equal(added.revision, draft.revision + 1);
+    assert.equal(added.attachments.length, 1);
+    assert.throws(
+      () => f.service.addAttachment(f.token, draft.id, valid),
+      /REVISION_CONFLICT/
+    );
+    assert.equal(f.service.read(f.token, draft.id).revision, added.revision);
+    assert.equal(f.service.read(f.token, draft.id).attachments.length, 1);
     assert.throws(
       () => f.service.publish(f.token, draft.id, preview.confirmation, true),
       /STALE_CONFIRMATION/
     );
     publish(f, draft.id);
     assert.equal(f.service.publicView(draft.id).attachments.length, 1);
-    f.service.addAttachment(f.token, draft.id, { ...valid, private: false });
+    f.service.addAttachment(f.token, draft.id, {
+      ...valid,
+      revision: f.service.read(f.token, draft.id).revision,
+      private: false
+    });
     assert.equal(f.service.publicView(draft.id).attachments.length, 1);
     publish(f, draft.id);
     assert.equal(f.service.publicView(draft.id).attachments.length, 2);
@@ -672,6 +697,71 @@ test("editor saves, reloads and publishes through HTTP; editing invalidates visi
       assert.equal(saved.revision, before.revision + 2);
       assert.equal(saved.draft.values.goal, "请求期间继续编辑");
       assert.deepEqual(saved.draft.publicFields, expectedPublic);
+    }
+    // A second session changes both budget and visibility before attachment
+    // submission, or after commit while the first session awaits the response.
+    const secondToken = f.auth.issueUserSession("buyer");
+    for (const timing of ["before", "after-commit"]) {
+      await dispatch("load");
+      const before = f.service.read(f.token, id);
+      elements.get("amount")!.value = "150.00";
+      publicBoxes.forEach(box => (box.checked = box.dataset.public === "goal"));
+      const remote = complete();
+      remote.values.amount = "250.00";
+      remote.publicFields = ["amount"];
+      let release!: () => void;
+      attachmentResponse = new Promise<void>(resolve => {
+        release = resolve;
+      });
+      if (timing === "after-commit") await dispatch("add-attachment");
+      const current = f.service.read(secondToken, id);
+      const remoteSave = await request(
+        f.service,
+        secondToken,
+        "/" + id,
+        "PUT",
+        {
+          revision: current.revision,
+          draft: remote
+        }
+      );
+      assert.equal(remoteSave.status, 200);
+      const requestStart = requests.length;
+      if (timing === "before") await dispatch("add-attachment");
+      release();
+      for (let i = 0; i < 5; i++)
+        await new Promise<void>(resolve => setImmediate(resolve));
+      // No follow-up GET may adopt the other session's revision.
+      assert.ok(
+        requests.slice(requestStart).every(url => url.endsWith("/attachments"))
+      );
+      if (timing === "before")
+        assert.match(
+          elements.get("status")!.textContent,
+          /版本冲突.*本地编辑已保留/
+        );
+      assert.equal(elements.get("amount")!.value, "150.00");
+      assert.deepEqual(
+        publicBoxes.filter(box => box.checked).map(box => box.dataset.public),
+        ["goal"]
+      );
+      await dispatch("requirement-form", "submit");
+      assert.match(
+        elements.get("status")!.textContent,
+        /版本冲突.*本地编辑已保留/
+      );
+      assert.equal(elements.get("amount")!.value, "150.00");
+      assert.deepEqual(
+        publicBoxes.filter(box => box.checked).map(box => box.dataset.public),
+        ["goal"]
+      );
+      const persisted = f.service.read(f.token, id);
+      assert.deepEqual(persisted.draft, remote);
+      assert.equal(persisted.revision, remoteSave.body.data.revision);
+      assert.equal(
+        persisted.attachments.length,
+        before.attachments.length + (timing === "before" ? 0 : 1)
+      );
     }
     assert.ok(requests.every(url => !url.includes(f.token)));
   } finally {

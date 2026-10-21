@@ -213,6 +213,7 @@ export class Requirements {
   addAttachment(token: string, id: string, input: unknown) {
     this.row(token, id, true);
     const value = input as {
+      revision: number;
       name: string;
       mime: string;
       size: number;
@@ -232,9 +233,17 @@ export class Requirements {
       (value.private !== undefined && typeof value.private !== "boolean")
     )
       throw new RequirementError("INVALID_ATTACHMENT");
+    if (!Number.isSafeInteger(value.revision))
+      throw new RequirementError("REVISION_REQUIRED");
     const attachmentId = randomUUID();
     this.db.exec("BEGIN IMMEDIATE");
     try {
+      const result = this.db
+        .prepare(
+          "UPDATE requirements SET revision = revision + 1 WHERE id = ? AND revision = ?"
+        )
+        .run(id, value.revision);
+      if (!result.changes) throw new RequirementError("REVISION_CONFLICT", 409);
       this.db
         .prepare(
           "INSERT INTO requirement_attachments VALUES (?, ?, ?, ?, ?, ?)"
@@ -247,15 +256,13 @@ export class Requirements {
           value.size,
           value.private === false ? 0 : 1
         );
-      this.db
-        .prepare("UPDATE requirements SET revision = revision + 1 WHERE id = ?")
-        .run(id);
+      const attachments = this.read(token, id).attachments;
       this.db.exec("COMMIT");
+      return { id: attachmentId, revision: value.revision + 1, attachments };
     } catch (error) {
       this.db.exec("ROLLBACK");
       throw error;
     }
-    return { id: attachmentId };
   }
   attachment(token: string, id: string, attachmentId: string) {
     this.row(token, id);

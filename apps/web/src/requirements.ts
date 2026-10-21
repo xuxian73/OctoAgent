@@ -137,6 +137,11 @@ export function mountRequirementEditor(root: Document) {
   }
   const run = (fn: () => Promise<void>) => {
     void fn().catch(error => {
+      if (error.message === "REVISION_CONFLICT") {
+        status.textContent =
+          "版本冲突：本地编辑已保留。请先复制本地修改，再加载最新草稿并核对合并后保存。";
+        return;
+      }
       status.textContent = `操作未完成：${error.message}。如版本冲突，请加载最新草稿。`;
     });
   };
@@ -214,17 +219,17 @@ export function mountRequirementEditor(root: Document) {
       invalidate();
       const file = input("attachment").files?.[0];
       if (!file) throw new Error("请选择文件");
-      await api(
+      const data = await api(
         "/" + encodeURIComponent(input("draft-id").value) + "/attachments",
         "POST",
         {
+          revision,
           name: file.name,
           mime: file.type,
           size: file.size,
           private: !input("attachment-public").checked
         }
       );
-      const data = await api("/" + encodeURIComponent(input("draft-id").value));
       revision = data.revision;
       displayAttachments(data.attachments);
       status.textContent = "附件元数据已保存；表单中的编辑已保留，请保存草稿。";
