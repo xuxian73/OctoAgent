@@ -37,7 +37,7 @@ export function renderApplication(
     )
     .join(
       ""
-    )}<a href="/agents">我的 Agent</a></nav><section id="notifications" aria-label="需求变更通知"><h2>需求变更通知</h2><div id="notification-items" role="status"></div><button id="notification-refresh" type="button">刷新通知</button><button id="notification-next" type="button" hidden>下一页</button></section><p>仅显示当前项目获准使用的入口；业务操作仍独立校验权限。</p></aside>`;
+    )}<a href="/agents">我的 Agent</a><a href="/onboarding">选择身份 / 完善资料</a><a href="/market">可接任务入口</a></nav><section id="notifications" aria-label="需求变更通知"><h2>需求变更通知</h2><div id="notification-items" role="status"></div><button id="notification-refresh" type="button">刷新通知</button><button id="notification-next" type="button" hidden>下一页</button></section><p>仅显示当前项目获准使用的入口；业务操作仍独立校验权限。</p></aside>`;
   return html
     .replace("<body>", "<body>" + header)
     .replace(
