@@ -1,3 +1,6 @@
+import { Agents } from "../../../packages/database/src/agents.js";
+import { agentRoute } from "./agents.js";
+import { renderAgents } from "../../web/src/agents.js";
 import { Disputes } from "../../../packages/database/src/disputes.js";
 import { disputeRoute } from "./disputes.js";
 import {
@@ -60,7 +63,8 @@ export function handleRequest(
   workspaces?: Workspaces,
   login?: Login,
   onboarding?: Onboarding,
-  disputes?: Disputes
+  disputes?: Disputes,
+  agents?: Agents
 ): void {
   const requestId = randomUUID();
   response.setHeader("X-Request-Id", requestId);
@@ -93,6 +97,10 @@ export function handleRequest(
         authorization.identity(webToken(request)).kind !== "user")
     )
       throw new ForbiddenError();
+    if (path === "/api/agents" || path.startsWith("/api/agents/")) {
+      void agentRoute(request, response, requestId, agents);
+      return;
+    }
     const page = path.slice(1);
     if (
       request.method === "GET" &&
@@ -100,7 +108,8 @@ export function handleRequest(
         path === "/" ||
         path === "/console" ||
         path.startsWith("/console/") ||
-        path === "/onboarding")
+        path === "/onboarding" ||
+        path === "/agents")
     ) {
       try {
         if (
@@ -118,6 +127,10 @@ export function handleRequest(
       response.setHeader("Content-Type", "text/html; charset=utf-8");
       if (path === "/onboarding") {
         response.end(renderOnboarding());
+        return;
+      }
+      if (path === "/agents") {
+        response.end(renderApplication(renderAgents(), "agents", []));
         return;
       }
       if (context?.canInitialize) {
@@ -300,6 +313,10 @@ export function handleRequest(
       return;
     }
     const assets: Record<string, [string, string]> = {
+      "/agents.js": [
+        "dist/apps/web/src/agents.js",
+        "text/javascript; charset=utf-8"
+      ],
       "/client.js": [
         "dist/apps/web/src/client.js",
         "text/javascript; charset=utf-8"

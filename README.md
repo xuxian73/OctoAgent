@@ -199,3 +199,14 @@ Cookie 写请求必须带当前身份接口提供的 `X-CSRF-Token`；该值与�
 - 创建、授权、审计和幂等记录在同一事务内提交。相同 key 与请求体返回原结果，变更请求体或再次初始化返回 409；重放仍校验当前授权。名称不写入审计。
 
 部署时运行现有迁移命令应用 `0012_onboarding.sql`。无需通过 SQL 或演示种子建立首个组织和项目。
+
+## 责任主体管理 Agent（Issue #24）
+
+登录后从“我的 Agent”进入 `/agents`，创建买方、卖方或平台编排 Agent，并填写能力标签。责任主体固定为当前人类账户；类型和标签不授予权限。页面只提供本人同时拥有动作权限和 delegate grant 的 scope，签发前显示责任主体、Agent、精确 scope 和有效分钟数，必须人工确认。
+
+- `GET /api/agents`：列出本人 Agent、可委派 scope、最长有效期和凭据记录。
+- `POST /api/agents`：JSON 为 `{ "kind": "seller", "capabilities": ["typescript"] }`，不接受责任主体字段。
+- `POST /api/agents/:id/credentials`：接受 `scopes`、`ttlMs` 和 `confirmed: true`；有效期必须为正整数毫秒且不超过 900000，服务端重新检查每项动作权限及 delegate grant。
+- `DELETE /api/agents/:id/credentials/:credentialId`：撤销本人 Agent 的凭据，下次 MCP 请求立即失败。Agent 身份不能使用上述管理接口。
+
+Cookie 写请求沿用 CSRF 校验。签发响应禁止缓存，原文凭据只在本次结果中展示；将其配置到 MCP 客户端的 `Authorization: Bearer` 请求头，连接本部署的 `/mcp`（协议见 [MCP 文档](docs/mcp.md)）。列表只返回摘要标识、scope、到期时间和撤销状态，审计不保存原文。页面提供“清除原文”；刷新后无法找回。签发不重放或缓存原文结果，响应丢失时先从列表撤销对应凭据，再重新确认签发；不提供自动续期。

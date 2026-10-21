@@ -73,3 +73,20 @@
 迁移 `0007_mcp.sql` 添加不可覆盖的请求记录。键绑定 Agent ID、责任主体 ID 和 request_id；规范化参数指纹拒绝同键改参，结果与业务变更在同一数据库事务中提交。Market 和 Workspaces 使用可嵌套 savepoint，使记录失败时业务操作也回滚。重启不会丢失去重结果；每次重放仍先重新校验当前凭据、scope 和业务对象授权。需要最新读取结果时使用新 request_id。
 
 MCP 适配器只调用业务服务，不查询数据库，不接收人类凭据，不执行支付或生产操作。读取失败不返回对象 ID、内部异常或私密数据。
+
+### 责任主体管理入口
+
+登录后从控制台进入「我的 Agent」（`/agents`）。创建时选择买方、卖方或平台编排类型，填写能力标签；标签不产生授权。责任主体固定为当前人类账户，不能通过此入口转移。
+
+页面列出本人 Agent 和凭据摘要，并仅提供同时满足本人动作权限与 delegate grant 的精确 scope。新建项目默认不包含 delegate grant，因此可能没有可选 scope；本入口不会扩大已有权限。核对责任主体、Agent、scope 和有效分钟数后确认签发，服务端仍逐项校验，最长 15 分钟。
+
+将签发结果中的原文凭据配置到 MCP 客户端的 `Authorization: Bearer <凭据>`，连接 `/mcp`。原文仅在签发响应中返回，不进入存储、审计或重放缓存；刷新后无法找回。结果丢失时，在列表撤销对应摘要标识后重新签发。撤销后下一次 MCP 调用立即拒绝。
+
+管理 API（沿用登录 Cookie 和 CSRF 防护，也接受人类 Bearer 会话）：
+
+- `GET /api/agents`：本人 Agent、凭据摘要和可委托 scope。
+- `POST /api/agents`：`{kind, capabilities}`，责任主体由服务端确定。
+- `POST /api/agents/{id}/credentials`：`{scopes, ttlMs, confirmed: true}`，仅本次返回原文。
+- `DELETE /api/agents/{id}/credentials/{digest}`：撤销本人 Agent 的指定凭据。
+
+此入口拒绝 Agent 身份和对他人凭据的管理，也不提供自动续期。
