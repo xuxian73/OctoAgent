@@ -306,6 +306,15 @@ test("buyer evidence page renders structured evidence and clears on contract cha
     replaceChildren() {}
   }
   const ids = [
+    "git-controls",
+    "git-init",
+    "source-refresh",
+    "branch-form",
+    "import-form",
+    "target-branch",
+    "source-file",
+    "file-milestone",
+    "diffs",
     "grant-form",
     "grant-confirmed",
     "actor",
@@ -327,6 +336,7 @@ test("buyer evidence page renders structured evidence and clears on contract cha
   ];
   const elements = new Map(ids.map(id => [id, new Element()]));
   const root = ({
+    createElement: () => new Element(),
     getElementById: (id: string) => elements.get(id)
   } as unknown) as Document;
   const original = globalThis.fetch;
@@ -335,6 +345,9 @@ test("buyer evidence page renders structured evidence and clears on contract cha
     json: async () => ({
       ok: true,
       data: {
+        milestones: [],
+        branches: {},
+        diffs: [],
         actors: [],
         permissions: [],
         status: "active",

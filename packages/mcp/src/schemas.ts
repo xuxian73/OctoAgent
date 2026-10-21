@@ -309,7 +309,10 @@ const workspaceDetail = z.strictObject({
   version: integer,
   status: contractStatus,
   taskVersion: integer,
-  provider: z.literal("offline-fake"),
+  provider: z.enum(["offline-fake", "local-git", "uninitialized"]),
+  milestones: z.array(milestoneDetail),
+  local: z.strictObject({ contractId: id, generation: id }).optional(),
+  diffs: z.array(z.strictObject({ sha: text, patch: z.string() })),
   branches: z.record(z.string(), z.string()),
   commits: z.array(
     z.strictObject({
@@ -317,6 +320,9 @@ const workspaceDetail = z.strictObject({
       branch: text,
       summary: z.string(),
       version: integer,
+      source: z
+        .strictObject({ fileId: id, checksum: text, path: text })
+        .optional(),
       files: z.record(z.string(), z.string())
     })
   ),

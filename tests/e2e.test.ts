@@ -169,6 +169,15 @@ test("workspace page loads seeded API evidence and clears it on tenant switch", 
       }
       const elements: Record<string, Element> = Object.fromEntries(
         [
+          "git-controls",
+          "git-init",
+          "source-refresh",
+          "branch-form",
+          "import-form",
+          "target-branch",
+          "source-file",
+          "file-milestone",
+          "diffs",
           "grant-form",
           "grant-confirmed",
           "actor",

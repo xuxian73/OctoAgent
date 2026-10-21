@@ -228,8 +228,9 @@ test("case view isolates evidence references and sanitized audit, records every 
             permission: "check",
             ttlMs: 1000
           }),
-        /CONTRACT_NOT_ACTIVE/
+        token === f.agent ? ForbiddenError : /CONTRACT_NOT_ACTIVE/
       );
+    assert.deepEqual(f.contracts.read(f.buyer, f.current().id), before);
     f.db.exec(
       "CREATE TRIGGER deny_case_audit BEFORE INSERT ON audit_events WHEN NEW.event='Disputes.read' BEGIN SELECT RAISE(ABORT,'audit unavailable'); END"
     );

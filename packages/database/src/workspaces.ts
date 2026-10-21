@@ -1,3 +1,4 @@
+import { LocalGitProvider } from "../../delivery/src/local-git.js";
 import { Files } from "./files.js";
 import { audited } from "./security.js";
 import { DatabaseSync } from "node:sqlite";
@@ -6,7 +7,6 @@ import { RequirementError } from "../../requirements/src/model.js";
 import { Contracts } from "./contracts.js";
 import {
   checksum,
-  FakeGitHubProvider,
   GitHubProvider,
   permissions,
   Permission,
@@ -18,7 +18,7 @@ export class Workspaces {
     private db: DatabaseSync,
     private auth: Authorization,
     private now = Date.now,
-    private provider: GitHubProvider = new FakeGitHubProvider()
+    private provider: GitHubProvider = new LocalGitProvider()
   ) {
     return audited(
       this,
@@ -77,8 +77,10 @@ export class Workspaces {
       state: JSON.parse(String(row.state)) as RepositoryState
     };
   }
-  read(token: string, id: string) {
+  read(token: string, id: string, includeDiffs = true) {
     const { contract, access, row, state } = this.access(token, id);
+    if (!includeDiffs && this.provider instanceof LocalGitProvider)
+      this.provider.verify(state, id);
     return {
       party: access.role,
       actors: [
@@ -99,9 +101,18 @@ export class Workspaces {
         .all(id, id),
       contractId: id,
       version: contract.version,
+      milestones: contract.milestones,
       status: contract.status,
       taskVersion: row.task_version,
-      provider: "offline-fake",
+      provider: state.local
+        ? "local-git"
+        : state.commits.length || Object.keys(state.branches).length
+        ? "offline-fake"
+        : "uninitialized",
+      diffs:
+        includeDiffs && this.provider instanceof LocalGitProvider
+          ? this.provider.diff(state, id)
+          : [],
       ...state,
       auditEventReferences: contract.events
         .filter(e => String(e.kind).startsWith("workspace_"))
@@ -120,7 +131,7 @@ export class Workspaces {
     this.provider.authorize(permission, grants);
     if (contract.status !== "active")
       throw new RequirementError("CONTRACT_NOT_ACTIVE", 409);
-    return this.read(token, id);
+    return this.read(token, id, false);
   }
   command(token: string, id: string, input: Record<string, unknown>) {
     const nested = this.db.isTransaction;
@@ -137,6 +148,8 @@ export class Workspaces {
       const key = text(input.requestKey);
       const sensitive = ["deploy", "migrate", "delete", "expand_permissions"];
       const required: Record<string, Permission> = {
+        initialize_repository: "branch",
+        import_artifact: "commit",
         create_workspace_branch: "branch",
         commit: "commit",
         run_check: "check",
@@ -166,7 +179,60 @@ export class Workspaces {
           this.provider.authorize(required[action]!, grants);
         }
       }
-      const fingerprint = checksum(JSON.stringify(input));
+      const gitWrite = [
+        "initialize_repository",
+        "create_workspace_branch",
+        "import_artifact"
+      ].includes(action);
+      if (gitWrite && this.provider instanceof LocalGitProvider)
+        this.provider.verify(state, id);
+      if (
+        this.provider instanceof LocalGitProvider &&
+        [
+          "initialize_repository",
+          "create_workspace_branch",
+          "import_artifact"
+        ].includes(action)
+      ) {
+        const fields = [
+          "action",
+          "version",
+          "requestKey",
+          ...(action === "create_workspace_branch"
+            ? ["branch"]
+            : action === "import_artifact"
+            ? ["branch", "path", "fileId", "summary"]
+            : [])
+        ];
+        if (Object.keys(input).some(key => !fields.includes(key)))
+          throw new RequirementError("INVALID_GIT_INPUT");
+      }
+      if (
+        ["initialize_repository", "import_artifact"].includes(action) &&
+        !(this.provider instanceof LocalGitProvider)
+      )
+        throw new RequirementError("LOCAL_GIT_REQUIRED");
+      // Replay must recheck source authorization, scan and byte integrity too.
+      const source =
+        action === "import_artifact"
+          ? new Files(this.db, this.auth).download(token, text(input.fileId))
+          : undefined;
+      if (
+        source &&
+        (source.metadata.kind !== "artifact" ||
+          source.metadata.resource_id !== id ||
+          source.metadata.version !== contract.version)
+      )
+        throw new RequirementError("ARTIFACT_BINDING_MISMATCH", 409);
+      const fingerprint = checksum(
+        JSON.stringify(
+          gitWrite && this.provider instanceof LocalGitProvider
+            ? Object.fromEntries(
+                Object.entries(input).sort(([a], [b]) => a.localeCompare(b))
+              )
+            : input
+        )
+      );
       const prior = this.db
         .prepare(
           "SELECT * FROM delivery_requests WHERE contract_id = ? AND actor_id = ? AND request_key = ?"
@@ -237,6 +303,28 @@ export class Workspaces {
           expiresAt,
           revoked: ttl === 0
         };
+      } else if (
+        action === "initialize_repository" &&
+        this.provider instanceof LocalGitProvider
+      ) {
+        result = this.provider.initialize(state, id);
+      } else if (
+        action === "import_artifact" &&
+        this.provider instanceof LocalGitProvider
+      ) {
+        const fileId = text(input.fileId);
+        const { metadata: file, bytes } = source!;
+        result = this.provider.importArtifact(
+          state,
+          id,
+          text(input.branch),
+          text(input.path),
+          bytes,
+          text(input.summary),
+          contract.version,
+          fileId,
+          String(file.checksum)
+        );
       } else if (sensitive.includes(action)) {
         result = {
           requires_human_confirmation: true,
@@ -381,6 +469,8 @@ export class Workspaces {
           .prepare("UPDATE milestones SET status = 'submitted' WHERE id = ?")
           .run(milestoneId);
       }
+      if (gitWrite && this.provider instanceof LocalGitProvider)
+        this.provider.publishReady(state, id);
       const envelope = {
         status: contract.status,
         summary: "工作区操作已记录",

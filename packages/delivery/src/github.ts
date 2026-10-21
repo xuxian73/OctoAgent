@@ -13,6 +13,7 @@ export const permissions = [
 ] as const;
 export type Permission = typeof permissions[number];
 export interface RepositoryState {
+  local?: { contractId: string; generation: string };
   branches: Record<string, string>;
   commits: {
     sha: string;
@@ -20,6 +21,7 @@ export interface RepositoryState {
     summary: string;
     version: number;
     files: Record<string, string>;
+    source?: { fileId: string; checksum: string; path: string };
   }[];
   checks: { sha: string; kind: string; passed: boolean; log: string }[];
   pullRequests: { sha: string; url: string; summary: string }[];

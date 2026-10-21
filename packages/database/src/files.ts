@@ -101,13 +101,14 @@ export class Files {
       const service = new Workspaces(this.db, this.auth);
       const value = write
         ? service.inspect(token, b.resourceId, "artifact")
-        : service.read(token, b.resourceId);
+        : service.read(token, b.resourceId, false);
       if (
         write &&
         (value.version !== b.version ||
-          !value.commits.some(
-            c => c.sha === b.sha && c.version === b.version
-          ) ||
+          (b.sha !== "" &&
+            !value.commits.some(
+              c => c.sha === b.sha && c.version === b.version
+            )) ||
           !this.db
             .prepare(
               "SELECT id FROM milestones WHERE id = ? AND contract_id = ? AND version = ?"
