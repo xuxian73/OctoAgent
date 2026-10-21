@@ -295,8 +295,16 @@ test("buyer evidence page renders structured evidence and clears on contract cha
   class Element extends EventTarget {
     value = "";
     textContent = "";
+    append() {}
+    replaceChildren() {}
   }
   const ids = [
+    "grant-form",
+    "grant-confirmed",
+    "actor",
+    "authorization",
+    "permissions",
+    "branches",
     "session",
     "contract",
     "load",
@@ -320,6 +328,8 @@ test("buyer evidence page renders structured evidence and clears on contract cha
     json: async () => ({
       ok: true,
       data: {
+        actors: [],
+        permissions: [],
         status: "active",
         commits: [{ summary: "完成变更" }],
         checks: [{ log: "PASS" }],
@@ -457,13 +467,16 @@ test("permission audit distinguishes validated subjects, grants, revocations and
     change("seller", "branch", 2000, "seller-grant");
     change("agent-a", "artifact", 3000, "agent-grant");
     change("agent-a", "artifact", 0, "agent-revoke");
-    change("agent-a", "artifact", 3000, "agent-grant");
+    assert.throws(
+      () => change("agent-a", "artifact", 3000, "agent-grant"),
+      ForbiddenError
+    );
     const rows = f.db
       .prepare(
-        "SELECT * FROM audit_events WHERE event = 'Workspaces.command.authorize' ORDER BY sequence"
+        "SELECT * FROM audit_events WHERE event = 'Workspaces.command.authorize' AND result='success' ORDER BY sequence"
       )
       .all();
-    assert.equal(rows.length, 4);
+    assert.equal(rows.length, 3);
     assert.deepEqual(
       rows.map(row => [
         row.target_subject,
@@ -474,8 +487,7 @@ test("permission audit distinguishes validated subjects, grants, revocations and
       [
         ["user:seller", "branch", "grant", 3000],
         ["agent:agent-a", "artifact", "grant", 4000],
-        ["agent:agent-a", "artifact", "revoke", 1000],
-        ["agent:agent-a", "artifact", "grant", 4000]
+        ["agent:agent-a", "artifact", "revoke", 1000]
       ]
     );
     for (const row of rows) {
@@ -492,7 +504,7 @@ test("permission audit distinguishes validated subjects, grants, revocations and
       );
       assert.equal(row.scope, rows[0]!.scope);
     }
-    // Replaying an earlier grant preserves its audit details without undoing revocation.
+    // Replaying an earlier grant is rejected without undoing revocation.
     assert.equal(
       f.db
         .prepare(

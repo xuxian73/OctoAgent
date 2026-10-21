@@ -97,7 +97,7 @@ export class Disputes {
     const adminId = typeof input.adminId === "string" ? input.adminId : "";
     if (
       store.user(adminId)?.platformRole !== "admin" ||
-      store.role(adminId, access.resource) !== "admin"
+      store.role(adminId, { ...access.resource, kind: "project" }) !== "admin"
     )
       throw new ForbiddenError();
     if (input.confirmed !== true)

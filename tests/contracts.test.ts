@@ -772,3 +772,45 @@ test("contract Agent scopes and revoked grants are checked on every read and ret
     f.db.close();
   }
 });
+
+test("party migration preserves legacy contracts, confirmations, workspace and effective grants", () => {
+  const f = setup();
+  try {
+    f.activate();
+    const id = f.current().id;
+    const before = f.contracts.read(f.buyer, id);
+    const grants = f.db.prepare("SELECT * FROM resource_grants").all();
+    f.db.exec("DROP VIEW contract_parties");
+    f.db.exec(
+      readFileSync(
+        "packages/database/migrations/0017_contract_parties.sql",
+        "utf8"
+      )
+    );
+    assert.deepEqual(f.contracts.read(f.buyer, id), before);
+    assert.deepEqual(
+      f.db.prepare("SELECT * FROM resource_grants").all(),
+      grants
+    );
+    assert.equal(
+      f.auth.authorize(f.seller, {
+        kind: "contract",
+        resourceId: id,
+        action: "delegate"
+      }).role,
+      "seller"
+    );
+    assert.equal(
+      f.db
+        .prepare(
+          "SELECT count(*) n FROM delivery_workspaces WHERE contract_id=?"
+        )
+        .get(id)!.n,
+      1
+    );
+    f.db.exec("DELETE FROM memberships WHERE user_id='seller'");
+    assert.equal(f.contracts.read(f.seller, id).id, id);
+  } finally {
+    f.db.close();
+  }
+});

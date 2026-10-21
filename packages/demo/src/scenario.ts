@@ -367,6 +367,16 @@ export async function runScenario(db: DatabaseSync): Promise<Report> {
         resourceId: contract.id,
         action
       });
+      for (const actorId of ["demo-seller", "demo-buyer"])
+        await api(buyer, `/api/workspaces/${contract.id}/commands`, "POST", {
+          action: "authorize",
+          version: 1,
+          requestKey: key(),
+          actorId,
+          permission: "delegate",
+          ttlMs: 900000,
+          confirmed: true
+        });
       const deliveryToken = agent(seller, "demo-seller-agent", [
         scoped("read"),
         scoped("write")

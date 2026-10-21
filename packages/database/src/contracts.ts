@@ -81,13 +81,13 @@ export class Contracts {
       this,
       db,
       auth,
-      ["select", "inspect", "read", "reputation", "command"],
+      ["bids", "list", "select", "inspect", "read", "reputation", "command"],
       (method, args, result) => ({
         type: method === "reputation" ? "agent" : "contract",
         id:
           method === "select"
             ? (result as { id: string }).id
-            : (args[1] as string)
+            : (args[1] as string) || "mine"
       })
     );
   }
@@ -197,6 +197,7 @@ export class Contracts {
         currency: "CNY",
         milestones: bid.proposal.milestones
       });
+      if (access.identity.id === bid.owner_id) throw new ForbiddenError();
       const id = randomUUID();
       this.db
         .prepare(
@@ -209,7 +210,7 @@ export class Contracts {
         )
         .run(id, access.resource.organizationId, access.resource.id);
       for (const user of [access.identity.id, bid.owner_id])
-        for (const action of ["read", "write", "delegate"])
+        for (const action of ["read", "write"])
           this.db
             .prepare("INSERT INTO resource_grants VALUES (?, 'contract', ?, ?)")
             .run(user, id, action);
@@ -228,6 +229,42 @@ export class Contracts {
       return this.read(token, id);
     });
   }
+  bids(token: string) {
+    const user = this.auth.identity(token).responsibleUserId;
+    const market = new Market(this.db, this.auth, this.now);
+    return this.db
+      .prepare("SELECT id FROM bids WHERE owner_id=? ORDER BY rowid DESC")
+      .all(user)
+      .flatMap(row => {
+        try {
+          return [market.bid(token, String(row.id))];
+        } catch (error) {
+          if (error instanceof ForbiddenError) return [];
+          throw error;
+        }
+      });
+  }
+  list(token: string) {
+    const user = this.auth.identity(token).responsibleUserId;
+    return this.db
+      .prepare(
+        "SELECT id FROM contracts WHERE buyer_id=? OR seller_id=? ORDER BY rowid DESC"
+      )
+      .all(user, user)
+      .flatMap(row => {
+        try {
+          return [
+            {
+              ...this.read(token, String(row.id)),
+              party: this.access(token, String(row.id)).party
+            }
+          ];
+        } catch (error) {
+          if (error instanceof ForbiddenError) return [];
+          throw error;
+        }
+      });
+  }
   inspect(token: string, id: string, write = false, role?: "buyer" | "seller") {
     const context = this.access(token, id, write);
     if (role && context.party !== role) throw new ForbiddenError();
@@ -238,6 +275,7 @@ export class Contracts {
     return {
       ...row,
       id: String(row.id),
+      buyer_id: String(row.buyer_id),
       seller_id: String(row.seller_id),
       version: Number(row.version),
       revision: Number(row.revision),
@@ -402,6 +440,8 @@ export class Contracts {
         throw new ForbiddenError();
       if (action === "review_draft" && party !== "buyer")
         throw new ForbiddenError();
+      if (input.version !== row.version)
+        throw new RequirementError("STALE_CONTRACT", 409);
       const key = text(input.requestKey);
       const fingerprint = JSON.stringify(input);
       const prior = this.db

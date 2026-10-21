@@ -170,6 +170,16 @@ export class Authorization {
         !credential.scopes.some(value => sameScope(value, scope)))
     )
       return deny();
+    if (
+      identity.kind === "agent" &&
+      scope.kind === "contract" &&
+      !this.store.granted(
+        identity.responsibleUserId,
+        { ...scope, action: "delegate" },
+        this.now()
+      )
+    )
+      return deny();
     const context = securityContext.getStore();
     if (context) {
       context.actor = identity.kind + ":" + identity.id;

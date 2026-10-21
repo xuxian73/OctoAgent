@@ -104,6 +104,13 @@ export function setup(path = ":memory:") {
   const task = f.publish();
   const bid = f.submit(f.seller, task);
   let contract = f.contracts.select(f.buyer, bid.id, true);
+  // Historical tests explicitly provision delegation; production selection does not.
+  for (const user of ["buyer", "seller"])
+    f.db
+      .prepare(
+        "INSERT INTO resource_grants VALUES (?, 'contract', ?, 'delegate')"
+      )
+      .run(user, contract.id);
   let sequence = 0;
   const command = (
     token: string,

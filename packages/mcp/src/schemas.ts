@@ -296,6 +296,15 @@ const submission = z.strictObject({
   artifacts: z.array(artifact)
 });
 const workspaceDetail = z.strictObject({
+  party: z.enum(["buyer", "seller"]),
+  actors: z.array(z.strictObject({ id, label: text })),
+  permissions: z.array(
+    z.strictObject({
+      actor_id: id,
+      permission: text,
+      expires_at: integer.nullable()
+    })
+  ),
   contractId: id,
   version: integer,
   status: contractStatus,

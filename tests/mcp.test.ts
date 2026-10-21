@@ -859,6 +859,12 @@ test("reputation aggregates verifiable authorized seller history and rechecks is
         }
       );
     }
+    for (const id of [late.id, disputed.id])
+      f.db
+        .prepare(
+          "INSERT INTO resource_grants VALUES ('seller', 'contract', ?, 'delegate')"
+        )
+        .run(id);
     const token = f.auth.issueAgentToken(
       f.seller,
       "agent-a",

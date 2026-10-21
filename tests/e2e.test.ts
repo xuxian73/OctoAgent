@@ -153,6 +153,11 @@ test("workspace page loads seeded API evidence and clears it on tenant switch", 
       let finished: () => void = () => {};
       class Element extends EventTarget {
         value = "";
+        click() {
+          this.dispatchEvent(new Event("click"));
+        }
+        append() {}
+        replaceChildren() {}
         private content = "";
         get textContent() {
           return this.content;
@@ -164,6 +169,12 @@ test("workspace page loads seeded API evidence and clears it on tenant switch", 
       }
       const elements: Record<string, Element> = Object.fromEntries(
         [
+          "grant-form",
+          "grant-confirmed",
+          "actor",
+          "authorization",
+          "permissions",
+          "branches",
           "session",
           "contract",
           "load",
@@ -189,6 +200,7 @@ test("workspace page loads seeded API evidence and clears it on tenant switch", 
         return { json: async () => JSON.parse(result.text) };
       });
       mountWorkspaces(({
+        createElement: () => new Element(),
         getElementById: (id: string) => elements[id]
       } as unknown) as Document);
       elements.session!.value = auth.issueUserSession("demo-buyer");

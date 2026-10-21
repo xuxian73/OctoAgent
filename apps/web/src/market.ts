@@ -218,6 +218,32 @@ export function mountMarket(root: Document) {
   on("compare", async () => {
     const bids = await api(task() + "/compare?sort=" + input("sort").value);
     renderComparison(root, input("comparison"), bids);
+    for (const bid of bids) {
+      const label = root.createElement("label");
+      const confirmed = root.createElement("input");
+      confirmed.type = "checkbox";
+      label.append(confirmed);
+      const text = root.createElement("span");
+      text.textContent =
+        "我确认选择该方案、价格和里程碑：" + bid.proposal.summary;
+      label.append(text);
+      const button = root.createElement("button");
+      button.textContent = "选择此报价";
+      button.addEventListener("click", () => {
+        void apiRequest("/api/contracts/select", "POST", {
+          bidId: bid.id,
+          confirmed: confirmed.checked
+        })
+          .then(contract => {
+            location.href =
+              "/contracts?contract=" + encodeURIComponent(contract.id);
+          })
+          .catch(e => {
+            input("status").textContent = "选标未完成：" + e.message;
+          });
+      });
+      input("comparison").append(label, button);
+    }
   });
   on("ask", async () => {
     await api(task() + "/questions", {
@@ -248,6 +274,11 @@ export function mountMarket(root: Document) {
     typeof location !== "undefined"
       ? new URLSearchParams(location.search).get("task")
       : null;
+  const linkedBid =
+    typeof location !== "undefined"
+      ? new URLSearchParams(location.search).get("bid")
+      : null;
+  if (linkedBid) input("bid").value = linkedBid;
   if (linkedTask) {
     input("task").value = linkedTask;
     input("detail").click();
