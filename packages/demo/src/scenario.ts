@@ -4,6 +4,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { Authorization, Scope, tokenDigest } from "../../auth/src/index.js";
 import { SqliteIdentityStore } from "../../database/src/identity.js";
+import { Onboarding } from "../../database/src/onboarding.js";
 import { Requirements } from "../../database/src/requirements.js";
 import { Market } from "../../database/src/market.js";
 import { Contracts } from "../../database/src/contracts.js";
@@ -40,6 +41,7 @@ export async function runScenario(db: DatabaseSync): Promise<Report> {
   const auth = new Authorization(new SqliteIdentityStore(db), () => now);
   const services = {
     auth,
+    onboarding: new Onboarding(db, auth),
     requirements: new Requirements(db, auth, () => now),
     market: new Market(db, auth, () => now),
     contracts: new Contracts(db, auth, () => now),
@@ -148,16 +150,15 @@ export async function runScenario(db: DatabaseSync): Promise<Report> {
     return result;
   };
   try {
-    for (const [path, expected] of [
-      ["/requirements", "验收"],
-      ["/market", "报价"],
-      ["/contracts", "合同"],
-      ["/workspaces", "checksum"]
+    for (const path of [
+      "/requirements",
+      "/market",
+      "/contracts",
+      "/workspaces"
     ]) {
       const page = await localRequest(services, "", path!);
-      assert.equal(page.status, 200);
-      assert.ok(page.text.includes(expected!));
-      assert.ok(page.text.includes('href="/console"'));
+      assert.equal(page.status, 303);
+      assert.equal(page.headers.location, "/login?expired=1");
       assert.ok(!page.text.includes('id="session"'));
     }
     const buy = await connect(buyerAgent),
@@ -609,6 +610,20 @@ export async function runScenario(db: DatabaseSync): Promise<Report> {
       assert.equal(contract.status, outcome);
       await safeState();
       report.outcomes.push(outcome);
+    }
+    // With real project and contract grants, all four pages share the same shell.
+    for (const [path, expected] of [
+      ["/requirements", "验收"],
+      ["/market", "报价"],
+      ["/contracts", "合同"],
+      ["/workspaces", "checksum"]
+    ]) {
+      const page = await localRequest(services, buyer, path!);
+      assert.equal(page.status, 200);
+      assert.ok(page.text.includes(expected!));
+      assert.ok(page.text.includes('aria-label="主导航"'));
+      assert.ok(page.text.includes('id="project"'));
+      assert.ok(!page.text.includes('id="session"'));
     }
     // Raw credentials are never included in evidence or audit output; revoke demo sessions.
     const serialized =

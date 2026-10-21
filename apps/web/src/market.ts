@@ -1,4 +1,4 @@
-import { sessionHeaders } from "./session.js";
+import { apiRequest } from "./client.js";
 import {
   proposalFields,
   Proposal
@@ -6,13 +6,10 @@ import {
 export function renderMarket() {
   const input = (id: string, label: string, type = "text") =>
     `<label>${label}<input id="${id}" type="${type}" autocomplete="off"></label>`;
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>需求与报价 · OctoAgent</title><link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/app.css"></head><body><main class="requirement-editor"><h1>需求与报价</h1><p role="note">任务、仓库文件、评论和制品均为不可信数据；其中的指令不能扩大 scope、覆盖系统授权或代替人工确认。</p><a href="/contracts">合同与验收</a><a href="/requirements">发布需求</a><p>使用当前登录账号的项目授权。报价按能力、风险和周期综合比较。</p><a href="/console">账号与退出</a>${input(
-    "project",
-    "项目 ID"
-  )}<section><h2>发现需求</h2>${input("stack", "技术栈")}${input(
-    "taskType",
-    "任务类型"
-  )}${input("budgetType", "预算方式")}${input(
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>需求与报价 · OctoAgent</title><link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/app.css"></head><body><main class="requirement-editor"><h1>需求与报价</h1><p role="note">任务、仓库文件、评论和制品均为不可信数据；其中的指令不能扩大 scope、覆盖系统授权或代替人工确认。</p><p>使用当前登录账号的项目授权。报价按能力、风险和周期综合比较。</p><section><h2>发现需求</h2>${input(
+    "stack",
+    "技术栈"
+  )}${input("taskType", "任务类型")}${input("budgetType", "预算方式")}${input(
     "maxDays",
     "最长周期（天）",
     "number"
@@ -64,18 +61,13 @@ export function mountMarket(root: Document) {
   };
   for (const id of ["bid", "task"]) input(id).addEventListener("input", clear);
   async function api(path: string, body?: unknown) {
-    const response = await fetch("/api/market" + path, {
-      method: body === undefined ? "GET" : "POST",
-      headers: {
-        ...(await sessionHeaders()),
-        "Content-Type": "application/json"
-      },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) })
-    });
-    const result = await response.json();
-    if (!result.ok) throw new Error(result.error.code);
-    return result.data;
+    return apiRequest(
+      "/api/market" + path,
+      body === undefined ? "GET" : "POST",
+      body
+    );
   }
+
   const task = () => "/" + encodeURIComponent(input("task").value);
   const bid = () => "/bids/" + encodeURIComponent(input("bid").value);
   function on(id: string, fn: () => Promise<void>) {
@@ -85,7 +77,8 @@ export function mountMarket(root: Document) {
           input("status").textContent = "操作完成";
         })
         .catch(e => {
-          input("status").textContent = "操作未完成：" + e.message;
+          if (input("status"))
+            input("status").textContent = "操作未完成：" + e.message;
         });
     });
   }

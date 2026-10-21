@@ -544,7 +544,7 @@ test("editor exposes all structured fields, private defaults, summary confirmati
     assert.ok(html.includes(label));
   assert.match(html, /id="confirmation" hidden/);
   assert.doesNotMatch(html, / checked/);
-  assert.match(html, /href="\/console"/);
+  assert.doesNotMatch(html, /项目 ID/);
   assert.doesNotMatch(html, /id="session"/);
   assert.match(html, /aria-live="polite"/);
 });

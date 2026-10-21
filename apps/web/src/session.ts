@@ -1,22 +1,42 @@
+let currentCsrf: string | undefined;
 export async function sessionHeaders(): Promise<Record<string, string>> {
   const response = await fetch("/api/auth/me", {
     credentials: "same-origin",
     cache: "no-store"
   });
   if (!response.ok) {
-    location.assign("/login");
-    throw new Error("请先登录");
+    if (typeof document !== "undefined")
+      document.dispatchEvent(new Event("session-ended"));
+    location.assign("/login?expired=1");
+    throw new Error("登录已失效，请重新登录");
   }
   const result = await response.json();
+  if (currentCsrf && currentCsrf !== result.data.csrf) {
+    if (typeof document !== "undefined")
+      document.dispatchEvent(new Event("session-ended"));
+    location.assign("/login?expired=1");
+    throw new Error("登录身份已变化，请重新进入项目");
+  }
+  currentCsrf = result.data.csrf;
   return { "X-CSRF-Token": result.data.csrf };
 }
 if (typeof document !== "undefined") {
   document.getElementById("logout")?.addEventListener("click", async () => {
-    const response = await fetch("/api/auth/logout", {
-      method: "POST",
-      headers: await sessionHeaders()
-    });
-    if (response.ok) location.assign("/login");
+    document.dispatchEvent(new Event("session-ended"));
+    try {
+      const headers = await sessionHeaders();
+      const response = await fetch("/api/auth/logout", {
+        method: "POST",
+        credentials: "same-origin",
+        headers
+      });
+      if (!response.ok) throw new Error();
+      location.assign("/login");
+    } catch {
+      const status = document.getElementById("session-status");
+      if (status)
+        status.textContent = "退出未完成，请重试退出登录。旧内容已清除。";
+    }
   });
   document.getElementById("login-form")?.addEventListener("submit", event => {
     event.preventDefault();
@@ -43,9 +63,10 @@ if (typeof document !== "undefined") {
     });
   });
 }
-export function renderLogin(): string {
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>登录 · OctoAgent</title><link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/app.css"></head><body><main class="requirement-editor"><h1>登录 OctoAgent</h1><p>请使用部署者提供的本地账号。</p><form id="login-form" method="post" action="/api/auth/login"><label>账号<input id="username" autocomplete="username" required maxlength="64"></label><label>密码<input id="password" type="password" autocomplete="current-password" required maxlength="256"></label><button>登录</button></form><p id="login-status" role="status"></p></main><script type="module" src="/session.js"></script></body></html>`;
-}
-export function renderSignedIn(): string {
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>控制台 · OctoAgent</title><link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/app.css"></head><body><main class="requirement-editor"><h1>交付控制台</h1><p>已登录。业务数据仍按现有组织、项目和资源权限校验。</p><nav><a href="/requirements">需求草稿</a> <a href="/market">需求与报价</a> <a href="/contracts">合同与验收</a> <a href="/workspaces">交付工作区</a></nav><button id="logout">退出登录</button></main><script type="module" src="/session.js"></script></body></html>`;
+export function renderLogin(expired = false): string {
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>登录 · OctoAgent</title><link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/app.css"></head><body><main class="requirement-editor"><h1>登录 OctoAgent</h1><p>${
+    expired
+      ? "登录已失效，请重新登录后继续。旧项目内容与待确认操作已清除。"
+      : "请使用部署者提供的本地账号。"
+  }</p><form id="login-form" method="post" action="/api/auth/login"><label>账号<input id="username" autocomplete="username" required maxlength="64"></label><label>密码<input id="password" type="password" autocomplete="current-password" required maxlength="256"></label><button>登录</button></form><p id="login-status" role="status"></p></main><script type="module" src="/session.js"></script></body></html>`;
 }

@@ -43,7 +43,8 @@ export class Onboarding {
       LEFT JOIN account_onboarding n ON n.project_id=p.id WHERE m.user_id=? ORDER BY p.id`
       )
       .all(user)
-      .filter(row => visible("project", String(row.id)));
+      .filter(row => visible("project", String(row.id)))
+      .map(row => ({ ...row, pages: this.pages(token, String(row.id), user) }));
     return {
       organizations,
       projects,
@@ -53,6 +54,56 @@ export class Onboarding {
         )
         .get(user, user)
     };
+  }
+  private pages(token: string, projectId: string, user: string) {
+    const allowed = (
+      action: "read" | "write",
+      roles: ("buyer" | "seller")[]
+    ) => {
+      try {
+        this.auth.authorize(
+          token,
+          { kind: "project", resourceId: projectId, action },
+          roles
+        );
+        return true;
+      } catch (error) {
+        if (error instanceof ForbiddenError) return false;
+        throw error;
+      }
+    };
+    const pages: string[] = [];
+    if (allowed("read", ["buyer"])) pages.push("requirements");
+    if (allowed("read", ["buyer", "seller"])) pages.push("market");
+    const contracts = this.db
+      .prepare(
+        "SELECT c.id, c.buyer_id, c.seller_id FROM contracts c JOIN requirements r ON r.id=c.requirement_id WHERE r.project_id=? AND (c.buyer_id=? OR c.seller_id=?)"
+      )
+      .all(projectId, user, user)
+      .filter(row => {
+        try {
+          const access = this.auth.authorize(
+            token,
+            { kind: "contract", resourceId: String(row.id), action: "read" },
+            ["buyer", "seller"]
+          );
+          return access.role === (row.buyer_id === user ? "buyer" : "seller");
+        } catch (error) {
+          if (error instanceof ForbiddenError) return false;
+          throw error;
+        }
+      });
+    if (contracts.length || allowed("write", ["buyer"]))
+      pages.push("contracts");
+    if (
+      contracts.some(row =>
+        this.db
+          .prepare("SELECT 1 FROM delivery_workspaces WHERE contract_id=?")
+          .get(row.id!)
+      )
+    )
+      pages.push("workspaces");
+    return pages;
   }
   create(token: string, input: unknown) {
     const user = this.human(token);
