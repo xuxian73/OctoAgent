@@ -25,7 +25,16 @@ export function mountAgents(
   async function refresh() {
     const data = await apiRequest("/api/agents");
     owner = data.responsibleUserId;
-    scopes = data.scopes;
+    const contract =
+      typeof location !== "undefined"
+        ? new URLSearchParams(location.search).get("contract")
+        : null;
+    scopes = contract
+      ? data.scopes.filter(
+          (scope: Scope) =>
+            scope.kind === "contract" && scope.resourceId === contract
+        )
+      : data.scopes;
     element("owner").textContent = "责任主体：" + owner;
     element("agent-id").replaceChildren();
     element("agent-list").replaceChildren();

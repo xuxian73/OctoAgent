@@ -16,13 +16,15 @@ const types: Record<string, string> = {
   zip: "application/zip"
 };
 export function renderFiles() {
-  return `<section id="private-files"><h2>私有文件</h2><p>文件隔离保存；仅当前字节通过真实扫描后可下载。测试扫描明确标记模拟，不代表真实安全扫描。ZIP 不写入应用目录或执行；扫描器受限读取归档内容。每版本最多 20 个文件，每个最多 10 MiB。</p><input type="file" id="private-file" accept=".ts,.txt,.md,.json,.zip"><button id="file-upload" type="button">上传真实字节</button><button id="file-refresh" type="button">刷新文件状态</button><progress id="file-progress" max="100" value="0"></progress><p id="file-status" role="status"></p><ul id="file-list"></ul></section>`;
+  return `<section id="private-files"><h2>私有文件</h2><p>文件隔离保存；仅当前字节通过真实扫描后可下载。测试扫描明确标记模拟，不代表真实安全扫描。ZIP 不写入应用目录或执行；扫描器受限读取归档内容。每版本最多 20 个文件，每个最多 10 MiB。</p><label for="private-file">选择文件</label><input type="file" id="private-file" accept=".ts,.txt,.md,.json,.zip"><button id="file-upload" type="button">上传真实字节</button><button id="file-refresh" type="button">刷新文件状态</button><progress aria-label="文件传输进度" id="file-progress" max="100" value="0"></progress><p id="file-status" role="status"></p><ul id="file-list"></ul></section>`;
 }
 export function mountFiles(root: Document, binding: () => UploadBinding) {
   if (!root.getElementById("private-files")) return;
   const el = (id: string) => root.getElementById(id)!;
   const status = el("file-status");
   const progress = el("file-progress") as HTMLProgressElement;
+  if (binding().kind === "artifact")
+    (el("private-file") as HTMLInputElement).accept = ".zip";
   let pending: { file: File; binding: string; key: string } | undefined;
   let active: XMLHttpRequest | undefined;
   let generation = 0;
@@ -55,7 +57,11 @@ export function mountFiles(root: Document, binding: () => UploadBinding) {
     );
     if (retired || current !== generation) return;
     el("file-list").replaceChildren();
-    for (const file of files) {
+    if (!files.length)
+      el("file-list").textContent = "暂无文件，请乙方选择 ZIP 上传。";
+    for (const file of files.filter(
+      (f: any) => b.kind !== "artifact" || f.milestone_id === b.milestoneId
+    )) {
       const li = root.createElement("li");
       li.textContent = `${file.name} · ${file.size} 字节 · SHA-256 ${
         file.checksum
@@ -152,6 +158,10 @@ export function mountFiles(root: Document, binding: () => UploadBinding) {
       const file = (el("private-file") as HTMLInputElement).files?.[0];
       if (!file) throw new Error("请选择文件");
       const b = binding();
+      if (b.kind === "artifact" && !file.name.toLowerCase().endsWith(".zip"))
+        throw new Error("交付请选择 ZIP 压缩包");
+      if (file.size > 10485760)
+        throw new Error("文件超过 10 MiB，请缩小 ZIP 后重试");
       const encoded = JSON.stringify(b);
       if (!pending || pending.file !== file || pending.binding !== encoded)
         pending = { file, binding: encoded, key: crypto.randomUUID() };
@@ -188,7 +198,21 @@ export function mountFiles(root: Document, binding: () => UploadBinding) {
         xhr.onload = () => {
           active = undefined;
           if (xhr.status >= 200 && xhr.status < 300) resolve();
-          else reject(new Error("上传失败：" + xhr.responseText));
+          else {
+            let code = "";
+            try {
+              code = JSON.parse(xhr.responseText).error.code;
+            } catch {}
+            reject(
+              new Error(
+                xhr.status === 413
+                  ? "上传超限，请缩小 ZIP 后重试"
+                  : xhr.status === 403
+                  ? "上传权限已失效或被撤销，请联系甲方授予本合同上传权限后重试"
+                  : `上传失败：${code}。请检查 ZIP 格式、合同是否生效，再刷新重试`
+              )
+            );
+          }
         };
         xhr.onerror = xhr.onabort = () => {
           active = undefined;
@@ -197,7 +221,8 @@ export function mountFiles(root: Document, binding: () => UploadBinding) {
         xhr.send(file);
       });
       if (retired || current !== generation) return;
-      status.textContent = "字节已保存；隔离中，等待扫描";
+      status.textContent =
+        "字节已保存；请查看下方扫描结果。放行后刷新可提交 ZIP。";
       await refresh();
     });
 }

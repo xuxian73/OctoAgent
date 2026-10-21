@@ -393,6 +393,10 @@ export function handleRequest(
         "dist/apps/web/src/session.js",
         "text/javascript; charset=utf-8"
       ],
+      "/zip-review.js": [
+        "dist/apps/web/src/zip-review.js",
+        "text/javascript; charset=utf-8"
+      ],
       "/workspaces.js": [
         "dist/apps/web/src/workspaces.js",
         "text/javascript; charset=utf-8"
