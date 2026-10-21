@@ -47,6 +47,10 @@ export class Requirements {
     const access = this.access(token, String(row.project_id), write);
     return { row, access };
   }
+  inspect(token: string, id: string, write = false) {
+    this.row(token, id, write);
+    return this.read(token, id);
+  }
   create(token: string, project: string, input: unknown) {
     this.access(token, project, true);
     const draft = parseDraft(input);

@@ -164,6 +164,25 @@ export class Authorization {
     return { identity, resource, role };
   }
 
+  // MCP discovery and self resources authenticate without broadening any scope.
+  agentIdentity(token: string) {
+    const { identity, credential } = this.authenticate(token);
+    if (identity.kind !== "agent") throw new ForbiddenError();
+    const agent = this.store.agent(identity.id)!;
+    return {
+      ...identity,
+      capabilities: [...agent.capabilities],
+      scopes: credential.scopes.filter(scope => {
+        try {
+          this.authorize(token, scope);
+          return true;
+        } catch {
+          return false;
+        }
+      })
+    };
+  }
+
   issueAgentToken(
     session: string,
     agentId: string,

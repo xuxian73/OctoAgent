@@ -53,8 +53,23 @@ export class Workspaces {
         .map(e => e.sequence)
     };
   }
+  inspect(token: string, id: string, permission: Permission) {
+    const { access, contract } = this.access(token, id, true);
+    if (access.role !== "seller") throw new ForbiddenError();
+    const grants = this.db
+      .prepare(
+        "SELECT permission FROM delivery_permissions WHERE contract_id = ? AND actor_id = ? AND expires_at > ?"
+      )
+      .all(id, access.identity.id, this.now())
+      .map(row => String(row.permission));
+    this.provider.authorize(permission, grants);
+    if (contract.status !== "active")
+      throw new RequirementError("CONTRACT_NOT_ACTIVE", 409);
+    return this.read(token, id);
+  }
   command(token: string, id: string, input: Record<string, unknown>) {
-    this.db.exec("BEGIN IMMEDIATE");
+    const nested = this.db.isTransaction;
+    this.db.exec(nested ? "SAVEPOINT workspaces_operation" : "BEGIN IMMEDIATE");
     try {
       const { contract, access, state } = this.access(token, id, true);
       if (contract.status !== "active")
@@ -103,7 +118,7 @@ export class Workspaces {
       if (prior) {
         if (prior.fingerprint !== fingerprint)
           throw new RequirementError("REQUEST_KEY_REUSED", 409);
-        this.db.exec("COMMIT");
+        this.db.exec(nested ? "RELEASE workspaces_operation" : "COMMIT");
         return JSON.parse(String(prior.result));
       }
       let result: unknown;
@@ -276,10 +291,14 @@ export class Workspaces {
           fingerprint,
           JSON.stringify(envelope)
         );
-      this.db.exec("COMMIT");
+      this.db.exec(nested ? "RELEASE workspaces_operation" : "COMMIT");
       return envelope;
     } catch (error) {
-      this.db.exec("ROLLBACK");
+      this.db.exec(
+        nested
+          ? "ROLLBACK TO workspaces_operation; RELEASE workspaces_operation"
+          : "ROLLBACK"
+      );
       throw error;
     }
   }

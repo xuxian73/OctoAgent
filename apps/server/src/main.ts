@@ -1,3 +1,6 @@
+import { MarketplaceMcp } from "../../../packages/mcp/src/index.js";
+import { mcpRoute } from "./mcp.js";
+import { randomUUID } from "node:crypto";
 import { openDatabase } from "../../../packages/database/src/index.js";
 import { Authorization } from "../../../packages/auth/src/index.js";
 import { createServer } from "node:http";
@@ -9,7 +12,19 @@ const database = openDatabase(
   process.env.DATABASE_URL || "file:./.data/octoagent.sqlite"
 );
 const authorization = new Authorization(database.identities);
-const server = createServer((request, response) =>
+const mcp = new MarketplaceMcp({
+  auth: authorization,
+  requirements: database.requirements(authorization),
+  market: database.market(authorization),
+  contracts: database.contracts(authorization),
+  workspaces: database.workspaces(authorization),
+  requests: database.mcpRequests()
+});
+const server = createServer((request, response) => {
+  if (new URL(request.url || "/", "http://localhost").pathname === "/mcp") {
+    void mcpRoute(request, response, randomUUID(), mcp);
+    return;
+  }
   handleRequest(
     request,
     response,
@@ -18,8 +33,8 @@ const server = createServer((request, response) =>
     database.market(authorization),
     database.contracts(authorization),
     database.workspaces(authorization)
-  )
-);
+  );
+});
 server.on("close", () => database.close());
 server.listen(port, process.env.HOST || "127.0.0.1", () => {
   console.log(`OctoAgent listening on port ${port}`);

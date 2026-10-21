@@ -144,3 +144,7 @@ API 均要求唯一 Bearer 请求头，JSON 请求体上限 200 KB：
 - `POST /api/contracts/{id}/commands`：公共字段 `{ action, version, revision, requestKey, confirmed: true, reason: { code, detail } }`。action 为 transition（另传 to）、confirm、change（另传完整 terms）、milestone（milestoneId、to，提交时附 evidence）、review_draft（milestoneId、report，不要求人工确认）、settlement。
 
 terms 包含 scope、deliverables、acceptance、changeRules、price、currency（CNY）及 milestones 字符串数组。相同责任人同一 requestKey 的同体重试只读取最新结果，不重复执行；变更请求体却复用 key 返回冲突。状态、版本、确认、幂等记录和审计事件在 `BEGIN IMMEDIATE` 事务内写入；旧条款与审计事件有禁止更新/删除的数据库触发器。测试包含独立 SQLite worker 并发确认与重复提交、HTTP 和浏览器交互、事务回滚、版本隔离、Agent 限权与争议冻结。
+
+### Marketplace MCP（issue #8）
+
+`/mcp` 提供官方 TypeScript SDK 的 Streamable HTTP 接口，支持全部工具、八个资源 URI 模板和三个提示词。使用短期 Agent Bearer Token，详见 [MCP 接口与人工确认协议](docs/mcp.md)。不可逆工具仅返回待人工确认范围，业务 API 保持最终权限与状态校验。

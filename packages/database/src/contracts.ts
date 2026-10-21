@@ -213,6 +213,11 @@ export class Contracts {
       return this.read(token, id);
     });
   }
+  inspect(token: string, id: string, write = false, role?: "buyer" | "seller") {
+    const context = this.access(token, id, write);
+    if (role && context.party !== role) throw new ForbiddenError();
+    return this.read(token, id);
+  }
   read(token: string, id: string) {
     const { row } = this.access(token, id);
     return {
@@ -250,11 +255,127 @@ export class Contracts {
         .map(e => ({
           ...e,
           kind: String(e.kind),
+          version: Number(e.version),
           sequence: Number(e.sequence),
           actor_id: String(e.actor_id),
           created_at: Number(e.created_at),
           payload: JSON.parse(String(e.payload))
         }))
+    };
+  }
+  // Aggregate only currently readable contracts of this Agent's responsible seller.
+  // Snapshotted selection and immutable events avoid private/current task data.
+  reputation(token: string, agentId: string) {
+    const identity = this.auth.agentIdentity(token);
+    if (agentId !== identity.id) throw new ForbiddenError();
+    const visible = identity.scopes
+      .filter(scope => scope.kind === "contract" && scope.action === "read")
+      .flatMap(scope => {
+        try {
+          const contract = this.read(token, scope.resourceId);
+          return contract.seller_id === identity.responsibleUserId
+            ? [contract]
+            : [];
+        } catch (error) {
+          if (!(error instanceof ForbiddenError)) throw error;
+          return [];
+        }
+      });
+    const contracts = [...new Map(visible.map(c => [c.id, c])).values()];
+    let completed = 0,
+      timed = 0,
+      onTime = 0,
+      disputed = 0;
+    const reviewed = new Set<string>(),
+      reworked = new Set<string>(),
+      stacks = new Set<string>();
+    const cases: {
+      contract_uri: string;
+      version: number;
+      completed_at: number;
+      evidence_events: number[];
+    }[] = [];
+    for (const contract of contracts) {
+      const events = contract.events;
+      const selected = events.find(e => e.kind === "selected");
+      const active = events.find(
+        e => e.kind === "contract_transition" && e.payload.to === "active"
+      );
+      const done = events.find(
+        e => e.kind === "contract_transition" && e.payload.to === "completed"
+      );
+      if (
+        events.some(
+          e => e.kind === "contract_transition" && e.payload.to === "disputed"
+        )
+      )
+        disputed++;
+      for (const event of events) {
+        if (event.kind !== "milestone_transition") continue;
+        const key = JSON.stringify([
+          contract.id,
+          event.version,
+          event.payload.milestoneId
+        ]);
+        if (
+          ["accepted", "rejected", "changes_requested"].includes(
+            event.payload.to
+          )
+        )
+          reviewed.add(key);
+        if (event.payload.to === "changes_requested") reworked.add(key);
+      }
+      if (contract.status !== "completed" || !done) continue;
+      completed++;
+      // A changed scope has no structured renegotiated duration; do not invent one.
+      const days = selected?.payload.proposal?.days;
+      if (
+        contract.version === 1 &&
+        active &&
+        typeof days === "number" &&
+        days > 0
+      ) {
+        timed++;
+        if (done.created_at <= active.created_at + days * 86400000) onTime++;
+      }
+      const stack = selected?.payload.requirement?.stack;
+      if (typeof stack === "string")
+        for (const tag of stack.split(/[\s,，;；]+/).filter(Boolean))
+          stacks.add(tag);
+      cases.push({
+        contract_uri: `octo://contract/${contract.id}`,
+        version: contract.version,
+        completed_at: done.created_at,
+        evidence_events: events
+          .filter(
+            e =>
+              (e.kind === "milestone_transition" &&
+                ["submitted", "accepted"].includes(e.payload.to)) ||
+              e.kind === "workspace_submit_milestone"
+          )
+          .map(e => e.sequence)
+      });
+    }
+    return {
+      id: identity.id,
+      basis: "authorized_responsible_seller_contracts",
+      metrics: {
+        completed_contracts: completed,
+        on_time_rate: timed ? onTime / timed : null,
+        acceptance_rework_rate: reviewed.size
+          ? reworked.size / reviewed.size
+          : null,
+        dispute_rate: contracts.length ? disputed / contracts.length : null,
+        sample_sizes: {
+          contracts: contracts.length,
+          timed_completions: timed,
+          reviewed_milestones: reviewed.size
+        }
+      },
+      stack_tags: [...stacks].sort(),
+      verifiable_cases: cases.sort((a, b) =>
+        a.contract_uri.localeCompare(b.contract_uri)
+      )
     };
   }
   // Every command is bound to the displayed version/revision. Retries cannot apply to a later version.

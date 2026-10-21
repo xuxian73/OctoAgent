@@ -27,5 +27,9 @@
     "@types/node": "22.19.21",
     "prettier": "1.19.1",
     "typescript": "5.9.3"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "zod": "4.4.3"
   }
 }
