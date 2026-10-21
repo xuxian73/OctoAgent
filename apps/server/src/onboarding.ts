@@ -49,6 +49,8 @@ async function executeRoute(
       if (typeof key !== "string" || !key.trim() || key.length > 200)
         throw new RequirementError("REQUEST_KEY_REQUIRED");
       data = service.create(token, body);
+    } else if (method === "PUT" && path === "/api/onboarding/seller") {
+      data = service.updateSeller(token, body);
     } else throw new RequirementError("NOT_FOUND", 404);
     response.end(
       JSON.stringify({

@@ -95,7 +95,11 @@ export function handleRequest(
       );
       return;
     }
-    if (path === "/api/onboarding" || path === "/api/contexts") {
+    if (
+      path === "/api/onboarding" ||
+      path === "/api/onboarding/seller" ||
+      path === "/api/contexts"
+    ) {
       void onboardingRoute(request, response, requestId, onboarding);
       return;
     }
@@ -139,14 +143,40 @@ export function handleRequest(
       const context = onboarding?.list(webToken(request));
       response.setHeader("Content-Type", "text/html; charset=utf-8");
       if (path === "/onboarding") {
-        response.end(renderOnboarding());
+        response.end(
+          renderApplication(
+            renderOnboarding(context?.sellerProfile),
+            "onboarding",
+            []
+          )
+        );
         return;
       }
       if (path === "/agents") {
         response.end(renderApplication(renderAgents(), "agents", []));
         return;
       }
-      if (context?.canInitialize) {
+      if (
+        context?.sellerProfile &&
+        !new URL(request.url!, "http://localhost").searchParams.has(
+          "project"
+        ) &&
+        (path === "/market" ||
+          ((path === "/" || path === "/console") && !context.projects.length))
+      ) {
+        response.end(
+          renderApplication(
+            emptyApplication("可接任务").replace(
+              "</main>",
+              '<p>乙方资料已完成。公开任务检索将在后续开放；当前暂无可接任务。</p><a href="/onboarding#seller">编辑乙方资料</a><a href="/onboarding#buyer">发布需求：创建首个项目</a></main>'
+            ),
+            "market",
+            (context.projects as unknown) as ApplicationProject[]
+          )
+        );
+        return;
+      }
+      if (context?.canInitialize && !context.sellerProfile) {
         response.statusCode = 303;
         response.setHeader("Location", "/onboarding");
         response.end();

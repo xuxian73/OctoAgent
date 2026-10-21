@@ -683,3 +683,81 @@ test("registration bounds body size and total read time before hashing", async t
     f.db.close();
   }
 });
+
+test("independent registered buyer and seller enter their own paths and retain profiles after logout", async () => {
+  const f = await fixture(false, true);
+  try {
+    const tokens: string[] = [];
+    for (const username of ["registered-buyer", "registered-seller"]) {
+      const registered = await f.call(
+        "/api/auth/register",
+        "POST",
+        { "content-type": "application/json", "x-octo-register": "1" },
+        { username, password: f.password }
+      );
+      assert.equal(registered.status, 200);
+      const signed = await f.signIn(username);
+      assert.equal(signed.status, 200);
+      tokens.push(
+        signed.headers["Set-Cookie"]!.split(";")[0]!.slice(
+          "octo_session=".length
+        )
+      );
+    }
+    const headers = (token: string) => ({
+      cookie: "octo_session=" + token,
+      "x-csrf-token": csrfToken(token),
+      "content-type": "application/json",
+      "idempotency-key": "registered-onboarding"
+    });
+    assert.equal(
+      (
+        await f.call("/api/onboarding", "POST", headers(tokens[0]!), {
+          role: "buyer",
+          organizationName: "合成组织",
+          projectName: "合成项目"
+        })
+      ).status,
+      200
+    );
+    const profile = {
+      role: "seller",
+      displayName: "合成乙方",
+      capabilities: "TypeScript",
+      taskTypes: "重构",
+      bio: "可验证交付"
+    };
+    assert.equal(
+      (await f.call("/api/onboarding", "POST", headers(tokens[1]!), profile))
+        .status,
+      200
+    );
+    assert.equal(
+      (
+        await f.call("/api/onboarding/seller", "PUT", headers(tokens[1]!), {
+          ...profile,
+          bio: "修改后的简介"
+        })
+      ).status,
+      200
+    );
+    assert.equal(
+      (await f.call("/api/auth/logout", "POST", headers(tokens[1]!))).status,
+      200
+    );
+    f.advance(60_001);
+    const signed = await f.signIn("registered-seller");
+    const cookie = signed.headers["Set-Cookie"]!.split(";")[0]!;
+    const context = await f.call("/api/contexts", "GET", { cookie });
+    assert.equal(context.body.data.sellerProfile.bio, "修改后的简介");
+    assert.equal(context.body.data.sellerProfile.status, "completed");
+    assert.deepEqual(context.body.data.projects, []);
+    assert.equal((await f.call("/market", "GET", { cookie })).status, 200);
+    assert.equal(
+      (await f.call("/requirements", "GET", headers(tokens[0]!))).status,
+      200
+    );
+  } finally {
+    f.db.close();
+  }
+});
