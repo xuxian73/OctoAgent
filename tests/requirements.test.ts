@@ -531,6 +531,7 @@ test("editor saves, reloads and publishes through HTTP; editing invalidates visi
     checked = false;
     hidden = false;
     textContent = "";
+    files: { name: string; type: string; size: number }[] = [];
     dataset: { public?: string } = {};
     children: Element[] = [];
     append(...elements: Element[]) {
@@ -555,6 +556,8 @@ test("editor saves, reloads and publishes through HTTP; editing invalidates visi
     "summary",
     "publish",
     "add-attachment",
+    "attachment",
+    "attachment-public",
     "attachments",
     "changes"
   ])
@@ -573,6 +576,7 @@ test("editor saves, reloads and publishes through HTTP; editing invalidates visi
   const f = fixture();
   const previousFetch = globalThis.fetch;
   const requests: string[] = [];
+  let attachmentResponse: Promise<void> | undefined;
   globalThis.fetch = (async (url: string, options: RequestInit) => {
     requests.push(url);
     const headers = options.headers as Record<string, string>;
@@ -583,6 +587,7 @@ test("editor saves, reloads and publishes through HTTP; editing invalidates visi
       options.method,
       options.body ? String(options.body) : undefined
     );
+    if (url.endsWith("/attachments")) await attachmentResponse;
     return { json: async () => result.body } as Response;
   }) as typeof fetch;
   async function dispatch(id: string, event = "click") {
@@ -618,6 +623,56 @@ test("editor saves, reloads and publishes through HTTP; editing invalidates visi
     await dispatch("load");
     assert.equal(elements.get("goal")!.value, complete().values.goal);
     assert.equal(elements.get("changes")!.children.length, 1);
+    // Preserve every field and both directions of public-flag edits, including
+    // edits made while the attachment request is still pending.
+    publicBoxes[0]!.checked = true;
+    await dispatch("requirement-form", "submit");
+    for (const initialState of ["saved", "loaded"]) {
+      if (initialState === "loaded") await dispatch("load");
+      const before = f.service.read(f.token, id);
+      for (const key of Object.keys(fields))
+        elements.get(key)!.value = `待保存-${key}`;
+      publicBoxes.forEach(box => (box.checked = !box.checked));
+      const expectedPublic = publicBoxes
+        .filter(box => box.checked)
+        .map(box => box.dataset.public);
+      elements.get("attachment")!.files = [
+        { name: "example.txt", type: "text/plain", size: 12 }
+      ];
+      let release!: () => void;
+      attachmentResponse = new Promise<void>(resolve => {
+        release = resolve;
+      });
+      await dispatch("add-attachment");
+      elements.get("goal")!.value = "请求期间继续编辑";
+      release();
+      for (let i = 0; i < 5; i++)
+        await new Promise<void>(resolve => setImmediate(resolve));
+      for (const key of Object.keys(fields))
+        assert.equal(
+          elements.get(key)!.value,
+          key === "goal" ? "请求期间继续编辑" : `待保存-${key}`
+        );
+      assert.deepEqual(
+        publicBoxes.filter(box => box.checked).map(box => box.dataset.public),
+        expectedPublic
+      );
+      assert.deepEqual(f.service.read(f.token, id).draft, before.draft);
+      assert.equal(
+        elements.get("attachments")!.children.length,
+        initialState === "saved" ? 1 : 2
+      );
+      assert.equal(elements.get("confirmation")!.hidden, true);
+      assert.match(elements.get("status")!.textContent, /请保存草稿/);
+      // A subsequent save uses the refreshed revision and persists retained edits.
+      for (const [key, value] of Object.entries(complete().values))
+        if (key !== "goal") elements.get(key)!.value = value;
+      await dispatch("requirement-form", "submit");
+      const saved = f.service.read(f.token, id);
+      assert.equal(saved.revision, before.revision + 2);
+      assert.equal(saved.draft.values.goal, "请求期间继续编辑");
+      assert.deepEqual(saved.draft.publicFields, expectedPublic);
+    }
     assert.ok(requests.every(url => !url.includes(f.token)));
   } finally {
     globalThis.fetch = previousFetch;

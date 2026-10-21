@@ -108,9 +108,14 @@ export function mountRequirementEditor(root: Document) {
         .join("、")}`;
       changes.append(li);
     }
+    displayAttachments(data.attachments);
+  }
+  function displayAttachments(
+    attachments: { name: string; private: number }[]
+  ) {
     const list = root.getElementById("attachments")!;
     list.replaceChildren();
-    for (const item of data.attachments) {
+    for (const item of attachments) {
       const li = root.createElement("li");
       li.textContent = `${item.name}（${
         item.private ? "私密" : "公开元数据"
@@ -219,7 +224,10 @@ export function mountRequirementEditor(root: Document) {
           private: !input("attachment-public").checked
         }
       );
-      display(await api("/" + encodeURIComponent(input("draft-id").value)));
+      const data = await api("/" + encodeURIComponent(input("draft-id").value));
+      revision = data.revision;
+      displayAttachments(data.attachments);
+      status.textContent = "附件元数据已保存；表单中的编辑已保留，请保存草稿。";
     })
   );
 }
