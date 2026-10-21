@@ -26,7 +26,11 @@ test("health route uses the shared response and request ID contract", () => {
   const result = request("/api/health");
   const body = JSON.parse(result.body);
   assert.equal(result.status, 200);
-  assert.deepEqual(body.data, { status: "ok" });
+  assert.equal(body.data.status, "ok");
+  assert.equal(body.data.fileScanner.scanner, "clamav-clamscan");
+  assert.ok(
+    ["available", "unavailable"].includes(body.data.fileScanner.status)
+  );
   assert.equal(body.ok, true);
   assert.equal(body.request_id, result.headers.get("X-Request-Id"));
 });

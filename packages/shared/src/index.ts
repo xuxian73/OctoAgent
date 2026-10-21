@@ -7,4 +7,5 @@ export type ApiResult<T> =
   | { ok: false; error: ApiError; request_id: string };
 export interface Health {
   status: "ok";
+  fileScanner?: { scanner: string; status: string };
 }

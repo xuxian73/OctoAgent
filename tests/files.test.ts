@@ -1,3 +1,4 @@
+import { FakeScanner } from "../packages/security/src/index.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -27,7 +28,7 @@ import { setup } from "./fixtures/contracts.js";
 import { Workspaces } from "../packages/database/src/workspaces.js";
 const scanner: ByteScanner = {
   name: "explicit-test-only",
-  simulated: true,
+  simulated: false,
   scan: () => "clean"
 };
 function fixture(path = ":memory:") {
@@ -36,10 +37,14 @@ function fixture(path = ":memory:") {
   seedIdentities(db);
   const auth = new Authorization(new SqliteIdentityStore(db));
   const token = auth.issueUserSession("buyer");
-  const req = new Requirements(db, auth).create(token, "project-a", {
-    values: {},
-    publicFields: []
-  });
+  const req = new Requirements(db, auth, Date.now, new FakeScanner()).create(
+    token,
+    "project-a",
+    {
+      values: {},
+      publicFields: []
+    }
+  );
   const input: FileUpload = {
     kind: "requirement",
     resourceId: req.id,
@@ -73,9 +78,9 @@ test("real temporary file bytes survive reopen; scanner required; exact digest a
     assert.equal(result.scan_status, "quarantined");
     assert.throws(() => f.files.download(f.token, id), /FILE_SCAN_BLOCKED/);
     new Files(f.db, f.auth).scan(id);
-    assert.equal(f.files.metadata(f.token, id).scan_status, "unverifiable");
+    assert.equal(f.files.metadata(f.token, id).scan_status, "unavailable");
     f.files.scan(id);
-    assert.equal(f.files.metadata(f.token, id).simulated, 1);
+    assert.equal(f.files.metadata(f.token, id).simulated, 0);
     assert.deepEqual(f.files.download(f.token, id).bytes, bytes);
     assert.deepEqual(
       f.files.upload(f.token, f.input, bytes),
@@ -205,7 +210,7 @@ test("reject traversal, symlink paths, types, forgery, size/count, stale version
     }).scan(String(first.id));
     assert.equal(
       f.files.metadata(f.token, String(first.id)).scan_status,
-      "failed"
+      "unavailable"
     );
     assert.throws(() => f.files.download(f.token, String(first.id)), /BLOCKED/);
   } finally {
@@ -266,7 +271,7 @@ test("HTTP concurrent retries, raw download headers and per-request revoked auth
     const id = results[0].data.id;
     assert.equal(
       (await request(`${base}/${id}/download`, "GET", headers)).status,
-      409
+      200
     );
     f.files.scan(id);
     const response = await request(`${base}/${id}/download`, "GET", headers);
@@ -383,7 +388,7 @@ test("shared SHA submissions isolate milestone artifacts and enforce binding and
       sha,
       milestoneId: secondSubmission.milestoneId
     });
-    new Files(f.db, f.auth, { ...scanner, scan: () => "infected" }).scan(
+    new Files(f.db, f.auth, { ...scanner, scan: () => "rejected" }).scan(
       String(file.id)
     );
     assert.throws(
@@ -422,7 +427,7 @@ test("shared SHA submissions isolate milestone artifacts and enforce binding and
     assert.equal(
       (workspace.read(f.buyer, id).submissions[0] as { simulated: boolean })
         .simulated,
-      true
+      false
     );
 
     assert.throws(
@@ -480,7 +485,7 @@ test("interrupted request never registers partial bytes; legacy metadata stays n
       f.files.upload(f.token, f.input, Buffer.from("complete")).size,
       8
     );
-    const service = new Requirements(f.db, f.auth);
+    const service = new Requirements(f.db, f.auth, Date.now, new FakeScanner());
     const legacy = service.addAttachment(f.token, f.input.resourceId, {
       revision: 1,
       name: "old.txt",
@@ -493,5 +498,117 @@ test("interrupted request never registers partial bytes; legacy metadata stays n
     assert.throws(() => f.files.download(f.token, legacy.id), /无权访问/);
   } finally {
     f.db.close();
+  }
+});
+
+test("scan lease, stale attempts, checksum mismatch, unavailable retry and simulated blocking", () => {
+  const f = fixture();
+  try {
+    const id = String(
+      f.files.upload(
+        f.token,
+        { ...f.input, scan_status: "clean" } as FileUpload,
+        Buffer.from("persisted")
+      ).id
+    );
+    assert.equal(f.files.metadata(f.token, id).scan_status, "quarantined");
+    let calls = 0;
+    const controlled = new Files(f.db, f.auth, {
+      name: "controlled-fixture",
+      simulated: false,
+      scan(bytes, checksum) {
+        calls++;
+        assert.equal(Buffer.from(bytes).toString(), "persisted");
+        assert.equal(
+          checksum,
+          createHash("sha256")
+            .update(bytes)
+            .digest("hex")
+        );
+        assert.equal(f.files.metadata(f.token, id).scan_status, "scanning");
+        controlled.scan(id);
+        assert.throws(() => f.files.download(f.token, id), /BLOCKED/);
+        return calls === 1 ? "unavailable" : "clean";
+      }
+    });
+    controlled.scan(id);
+    assert.equal(calls, 1);
+    assert.equal(f.files.metadata(f.token, id).scan_status, "unavailable");
+    controlled.retry(f.token, id);
+    assert.equal(calls, 2);
+    const clean = f.files.metadata(f.token, id);
+    assert.equal(clean.scan_checksum, clean.checksum);
+    assert.ok(Number(clean.scanned_at) >= Number(clean.scan_started_at));
+    new Files(f.db, f.auth, { ...scanner, simulated: true }).scan(id);
+    assert.throws(() => f.files.download(f.token, id), /BLOCKED/);
+    new Files(f.db, f.auth, {
+      ...scanner,
+      scan: () => {
+        f.db
+          .prepare(
+            "UPDATE private_files SET scan_attempt = 'new-attempt', scan_status = 'unavailable' WHERE id = ?"
+          )
+          .run(id);
+        return "clean";
+      }
+    }).scan(id);
+    assert.equal(f.files.metadata(f.token, id).scan_status, "unavailable");
+    f.db
+      .prepare(
+        "UPDATE private_files SET scan_status = 'scanning', scan_started_at = 0 WHERE id = ?"
+      )
+      .run(id);
+    controlled.scan(id);
+    assert.equal(f.files.metadata(f.token, id).scan_status, "clean");
+    f.db
+      .prepare("UPDATE private_files SET scan_checksum = 'stale' WHERE id = ?")
+      .run(id);
+    assert.throws(() => f.files.download(f.token, id), /BLOCKED/);
+    f.db.exec("DROP TRIGGER private_files_immutable");
+    f.db
+      .prepare("UPDATE private_files SET bytes = ? WHERE id = ?")
+      .run(Buffer.from("tampered"), id);
+    controlled.scan(id);
+    assert.equal(f.files.metadata(f.token, id).scan_status, "unavailable");
+    assert.equal(calls, 3);
+  } finally {
+    f.db.close();
+  }
+});
+
+test("independent database connections cannot steal an active scan lease", () => {
+  const dir = mkdtempSync(join(tmpdir(), "octo-scan-lease-"));
+  const path = join(dir, "files.sqlite");
+  const f = fixture(path);
+  const other = new DatabaseSync(path);
+  try {
+    const id = String(
+      f.files.upload(f.token, f.input, Buffer.from("lease bytes")).id
+    );
+    let competingCalls = 0;
+    const competitor = new Files(other, f.auth, {
+      ...scanner,
+      scan: () => {
+        competingCalls++;
+        return "rejected";
+      }
+    });
+    new Files(f.db, f.auth, {
+      ...scanner,
+      scan: () => {
+        competitor.scan(id);
+        return "clean";
+      }
+    }).scan(id);
+    assert.equal(competingCalls, 0);
+    assert.equal(f.files.metadata(f.token, id).scan_status, "clean");
+    assert.throws(
+      () => f.files.retry(f.auth.issueUserSession("outsider"), id),
+      /无权访问/
+    );
+  } finally {
+    other.close();
+    f.db.close();
+    rmSync(dir, { recursive: true, force: true });
   }
 });

@@ -45,7 +45,15 @@ async function executeRoute(
           throw new RequirementError("FILE_SIZE_LIMIT", 413);
         chunks.push(bytes);
       }
-      data = files.upload(token, input, Buffer.concat(chunks));
+      const stored = files.upload(token, input, Buffer.concat(chunks));
+      if (stored.scan_status === "quarantined") files.scan(String(stored.id));
+      data = files.metadata(token, String(stored.id));
+    } else if (
+      request.method === "POST" &&
+      parts.length === 5 &&
+      parts[4] === "scan"
+    ) {
+      data = files.retry(token, parts[3]!);
     } else if (request.method === "GET" && parts.length === 3) {
       data = files.list(
         token,

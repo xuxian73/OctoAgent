@@ -351,10 +351,14 @@ CREATE TABLE private_files (
  mime TEXT NOT NULL,
  size INTEGER NOT NULL,
  checksum TEXT NOT NULL,
- scan_status TEXT NOT NULL CHECK(scan_status IN ('quarantined','clean','infected','failed','unverifiable')),
+ scan_status TEXT NOT NULL CHECK(scan_status IN ('quarantined','scanning','clean','rejected','unavailable')),
  scanner TEXT NOT NULL,
  simulated INTEGER NOT NULL,
  bytes BLOB NOT NULL,
+ scan_checksum TEXT,
+ scan_started_at INTEGER,
+ scanned_at INTEGER,
+ scan_attempt TEXT,
  UNIQUE(actor, request_key)
 );
 CREATE TRIGGER private_files_immutable BEFORE UPDATE OF id, kind, resource_id, version, revision, milestone_id, sha, actor, responsible_user, request_key, fingerprint, name, mime, size, checksum, bytes ON private_files

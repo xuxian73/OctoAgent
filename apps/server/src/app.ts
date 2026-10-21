@@ -1,3 +1,4 @@
+import { ClamAVScanner } from "../../../packages/security/src/clamav.js";
 import { Files } from "../../../packages/database/src/files.js";
 import { fileRoute } from "./files.js";
 import { Agents } from "../../../packages/database/src/agents.js";
@@ -303,7 +304,7 @@ export function handleRequest(
     if (request.method === "GET" && path === "/api/health") {
       const body: ApiResult<Health> = {
         ok: true,
-        data: { status: "ok" },
+        data: { status: "ok", fileScanner: new ClamAVScanner().health() },
         request_id: requestId
       };
       response.setHeader("Content-Type", "application/json; charset=utf-8");

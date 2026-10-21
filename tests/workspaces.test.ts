@@ -1,3 +1,5 @@
+import { FakeGitHubProvider } from "../packages/delivery/src/github.js";
+import { FakeScanner } from "../packages/security/src/index.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { setup } from "./fixtures/contracts.js";
@@ -11,7 +13,12 @@ function fixture() {
   const f = setup();
   f.activate();
   const id = f.current().id;
-  const service = new Workspaces(f.db, f.auth, () => 1000);
+  const service = new Workspaces(
+    f.db,
+    f.auth,
+    () => 1000,
+    new FakeGitHubProvider(new FakeScanner())
+  );
   const agent = f.auth.issueAgentToken(
     f.seller,
     "agent-a",

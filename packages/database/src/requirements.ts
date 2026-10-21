@@ -1,4 +1,4 @@
-import { Scanner, FakeScanner, scanFile } from "../../security/src/index.js";
+import { Scanner, scanFile } from "../../security/src/index.js";
 import { audited } from "./security.js";
 import { randomBytes, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
@@ -27,7 +27,7 @@ export class Requirements {
     private db: DatabaseSync,
     private auth: Authorization,
     private now = Date.now,
-    private scanner: Scanner = new FakeScanner()
+    private scanner: Scanner = { scan: () => "unavailable" }
   ) {
     return audited(
       this,

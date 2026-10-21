@@ -71,7 +71,7 @@ test("main database upgrades preserve notifications and durable idempotent reads
       seed.exec("PRAGMA foreign_keys = ON");
       // Reproduce main's schema and migration ledger before notification reads.
       seed.exec(`DROP TABLE private_files;
-        DELETE FROM _migrations WHERE name = '0015_private_files.sql';
+        DELETE FROM _migrations WHERE name IN ('0015_private_files.sql', '0016_file_scanning.sql');
         DROP TABLE seller_profiles;
         DELETE FROM _migrations WHERE name = '0015_seller_profiles.sql';
         DROP TABLE requirement_notification_reads;
@@ -119,7 +119,7 @@ test("main database upgrades preserve notifications and durable idempotent reads
       );
       assert.equal(
         inspection.prepare("SELECT count(*) AS n FROM _migrations").get()!.n,
-        16
+        17
       );
     } finally {
       inspection.close();
