@@ -1,14 +1,29 @@
-import { ApiResult, Health } from "../../../packages/shared/src/index.js";
-async function showHealth(): Promise<void> {
-  const status = document.getElementById("status");
-  if (!status) return;
-  try {
-    const response = await fetch("/api/health");
-    const result: ApiResult<Health> = await response.json();
-    status.textContent =
-      response.ok && result.ok ? "服务运行正常" : "服务暂时不可用";
-  } catch {
-    status.textContent = "无法连接服务";
-  }
+export function validateGoal(value: string): string | null {
+  return value.trim() ? null : "请填写需求目标。";
 }
-void showHealth();
+export function mountInteractions(root: Document, reload: () => void): void {
+  root
+    .querySelector<HTMLButtonElement>("[data-retry]")
+    ?.addEventListener("click", reload);
+  const form = root.querySelector<HTMLFormElement>("[data-demo-form]");
+  form?.addEventListener("submit", event => {
+    event.preventDefault();
+    const input = root.querySelector<HTMLInputElement>("#goal")!;
+    const error = validateGoal(input.value);
+    input.setAttribute("aria-invalid", String(!!error));
+    root.querySelector<HTMLElement>("#goal-error")!.textContent = error || "";
+    root.querySelector<HTMLElement>("[data-form-result]")!.textContent = error
+      ? ""
+      : "检查通过。此为演示，未保存或发布。";
+    const summary = root.querySelector<HTMLElement>("[data-form-summary]");
+    if (summary) {
+      summary.textContent = error
+        ? "请检查表单：需求目标尚未填写。"
+        : "表单检查通过，未保存或发布。";
+      summary.setAttribute("role", error ? "alert" : "status");
+    }
+    if (error) input.focus();
+  });
+}
+if (typeof document !== "undefined")
+  mountInteractions(document, () => window.location.reload());

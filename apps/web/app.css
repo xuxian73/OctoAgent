@@ -1,0 +1,244 @@
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font);
+  line-height: 1.65;
+}
+a {
+  color: var(--sea);
+  text-underline-offset: 0.25em;
+}
+button,
+input {
+  font: inherit;
+}
+a,
+button {
+  touch-action: manipulation;
+}
+a:focus-visible,
+button:focus-visible,
+input:focus-visible {
+  outline: 3px solid var(--coral);
+  outline-offset: 4px;
+}
+.skip {
+  position: absolute;
+  top: -6rem;
+  padding: var(--space);
+  background: var(--surface);
+  z-index: 2;
+}
+.skip:focus {
+  top: 0;
+}
+.shell {
+  display: grid;
+  grid-template-columns: var(--sidebar) minmax(0, 1fr);
+  min-height: 100vh;
+}
+.sidebar {
+  padding: 2rem 1.25rem;
+  background: var(--ink);
+  color: var(--on-dark);
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: inherit;
+  text-decoration: none;
+  font-weight: 700;
+}
+.logo {
+  width: 3rem;
+  flex-shrink: 0;
+}
+small {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+.sidebar nav {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 3rem;
+}
+.sidebar nav a {
+  color: inherit;
+  padding: 0.75rem 1rem;
+  text-decoration: none;
+  border-left: 3px solid transparent;
+}
+.sidebar nav a[aria-current] {
+  background: var(--sea);
+  border-color: var(--on-dark);
+}
+.body {
+  min-width: 0;
+}
+header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space);
+  border-bottom: 1px solid var(--line);
+  padding: 1rem 2.5rem;
+}
+header strong {
+  color: var(--coral);
+  font-size: 0.875rem;
+}
+main {
+  max-width: 85rem;
+  padding: 2.5rem;
+  margin: auto;
+}
+.breadcrumb {
+  display: flex;
+  gap: var(--space);
+  font-size: 0.875rem;
+}
+h1 {
+  font-size: clamp(1.75rem, 3vw, 2.5rem);
+  margin: 1rem 0;
+}
+h2 {
+  font-size: 1.125rem;
+}
+.notice {
+  border-left: 3px solid var(--sea);
+  padding: 0.5rem 1rem;
+  background: var(--tint);
+  margin-bottom: 1.5rem;
+}
+.notice p {
+  margin: 0.25rem 0;
+}
+.actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 2rem;
+}
+.actions a,
+button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem 1rem;
+  min-height: 44px;
+  border-radius: var(--radius);
+  background: var(--ink);
+  color: var(--on-dark);
+  border: 0;
+  text-decoration: none;
+  cursor: pointer;
+  text-align: center;
+}
+.actions a:first-child {
+  background: var(--coral);
+}
+.columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 1.5rem;
+  align-items: start;
+}
+.panel,
+form {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  overflow-wrap: anywhere;
+}
+.state {
+  min-height: 16rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+}
+p,
+dd {
+  color: var(--muted);
+}
+dl {
+  margin: 0;
+}
+dl div {
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--line);
+}
+dt {
+  font-size: 0.875rem;
+}
+dd {
+  margin: 0.25rem 0 0;
+}
+.state-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin-top: 2rem;
+}
+.state-links a {
+  padding: 0.5rem 0;
+  min-height: 44px;
+}
+form {
+  margin-top: 1rem;
+}
+label {
+  display: block;
+}
+input {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid var(--muted);
+  border-radius: var(--radius);
+}
+input[aria-invalid="true"] {
+  border-color: var(--coral);
+}
+footer {
+  padding: 1rem 2.5rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+@media (max-width: 760px) {
+  .shell,
+  .columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sidebar {
+    padding: 1rem;
+  }
+  .sidebar nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin-top: 1rem;
+  }
+  .sidebar nav a {
+    padding: 0.5rem 0.75rem;
+  }
+  main {
+    padding: 1.25rem 1rem;
+  }
+  header,
+  footer {
+    padding: 1rem;
+  }
+  .actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .panel {
+    padding: 1.25rem;
+  }
+}
