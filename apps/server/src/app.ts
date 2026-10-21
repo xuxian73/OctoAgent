@@ -1,3 +1,6 @@
+import { Workspaces } from "../../../packages/database/src/workspaces.js";
+import { workspaceRoute } from "./workspaces.js";
+import { renderWorkspaces } from "../../web/src/workspaces.js";
 import { Contracts } from "../../../packages/database/src/contracts.js";
 import { contractRoute } from "./contracts.js";
 import { renderContracts } from "../../web/src/contracts.js";
@@ -39,13 +42,24 @@ export function handleRequest(
   authorization?: Authorization,
   requirements?: Requirements,
   market?: Market,
-  contracts?: Contracts
+  contracts?: Contracts,
+  workspaces?: Workspaces
 ): void {
   const requestId = randomUUID();
   response.setHeader("X-Request-Id", requestId);
   response.setHeader("X-Content-Type-Options", "nosniff");
   try {
     const path = new URL(request.url || "/", "http://localhost").pathname;
+    if (path === "/api/workspaces" || path.startsWith("/api/workspaces/")) {
+      void workspaceRoute(request, response, requestId, workspaces);
+      return;
+    }
+    if (path === "/workspaces" && request.method === "GET") {
+      response.setHeader("Content-Type", "text/html; charset=utf-8");
+      response.setHeader("Cache-Control", "no-store");
+      response.end(renderWorkspaces());
+      return;
+    }
     if (path === "/api/contracts" || path.startsWith("/api/contracts/")) {
       void contractRoute(request, response, requestId, contracts);
       return;
@@ -157,6 +171,10 @@ export function handleRequest(
       return;
     }
     const assets: Record<string, [string, string]> = {
+      "/workspaces.js": [
+        "dist/apps/web/src/workspaces.js",
+        "text/javascript; charset=utf-8"
+      ],
       "/contracts.js": [
         "dist/apps/web/src/contracts.js",
         "text/javascript; charset=utf-8"
