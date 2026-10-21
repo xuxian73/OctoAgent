@@ -14,24 +14,49 @@ export class Market {
     private auth: Authorization,
     private now = Date.now
   ) {
-    return audited(this, db, auth, [
-      "inspectTask",
-      "inspectBid",
-      "clarify",
-      "search",
-      "detail",
-      "draft",
-      "bid",
-      "preview",
-      "submit",
-      "withdraw",
-      "supplement",
-      "listBids",
-      "compare",
-      "question",
-      "answer",
-      "timeline"
-    ]);
+    return audited(
+      this,
+      db,
+      auth,
+      [
+        "inspectTask",
+        "inspectBid",
+        "clarify",
+        "search",
+        "detail",
+        "draft",
+        "bid",
+        "preview",
+        "submit",
+        "withdraw",
+        "supplement",
+        "listBids",
+        "compare",
+        "question",
+        "answer",
+        "timeline"
+      ],
+      (method, args, result) => ({
+        type:
+          method === "search"
+            ? "project"
+            : [
+                "draft",
+                "bid",
+                "inspectBid",
+                "preview",
+                "submit",
+                "withdraw",
+                "supplement"
+              ].includes(method)
+            ? "bid"
+            : "requirement",
+        id:
+          method === "draft"
+            ? (result as { id: string }).id
+            : (args[1] as string)
+      })
+    );
   }
   private transaction<T>(fn: () => T): T {
     const nested = this.db.isTransaction;

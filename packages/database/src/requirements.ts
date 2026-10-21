@@ -29,17 +29,32 @@ export class Requirements {
     private now = Date.now,
     private scanner: Scanner = new FakeScanner()
   ) {
-    return audited(this, db, auth, [
-      "inspect",
-      "create",
-      "read",
-      "save",
-      "preview",
-      "publish",
-      "publicView",
-      "addAttachment",
-      "attachment"
-    ]);
+    return audited(
+      this,
+      db,
+      auth,
+      [
+        "inspect",
+        "create",
+        "read",
+        "save",
+        "preview",
+        "publish",
+        "publicView",
+        "addAttachment",
+        "attachment"
+      ],
+      (method, args, result) => ({
+        type: ["addAttachment", "attachment"].includes(method)
+          ? "attachment"
+          : "requirement",
+        id: ["create", "addAttachment", "attachment", "publicView"].includes(
+          method
+        )
+          ? (result as { id: string }).id
+          : (args[1] as string)
+      })
+    );
   }
   private access(token: string, project: string, write = false) {
     // Mutations return the saved private draft, so require read access before writing.

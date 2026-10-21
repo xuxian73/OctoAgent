@@ -19,7 +19,16 @@ export class Workspaces {
     private now = Date.now,
     private provider: GitHubProvider = new FakeGitHubProvider()
   ) {
-    return audited(this, db, auth, ["read", "inspect", "command"]);
+    return audited(
+      this,
+      db,
+      auth,
+      ["read", "inspect", "command"],
+      (_method, args) => ({
+        type: "contract",
+        id: args[1] as string
+      })
+    );
   }
   private access(token: string, id: string, write = false) {
     const contract = new Contracts(this.db, this.auth, this.now).read(

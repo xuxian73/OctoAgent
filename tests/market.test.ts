@@ -702,3 +702,42 @@ test("market browser controls submit a confirmed bid and render two comparison c
     f.db.close();
   }
 });
+
+test("bid audit identifies generated and changed bids independently of the project scope", () => {
+  const f = fixture();
+  try {
+    const task = f.publish();
+    const first = f.market.draft(f.seller, task, offer);
+    const second = f.market.draft(f.seller, task, offer);
+    const drafted = f.db
+      .prepare(
+        "SELECT * FROM audit_events WHERE event='Market.draft' ORDER BY sequence"
+      )
+      .all();
+    assert.deepEqual(
+      drafted.map(e => [e.object_type, e.object_id]),
+      [
+        ["bid", first.id],
+        ["bid", second.id]
+      ]
+    );
+    const preview = f.market.preview(f.seller, second.id);
+    f.market.submit(f.seller, second.id, preview.confirmation, true);
+    f.market.withdraw(f.seller, second.id);
+    for (const event of f.db
+      .prepare(
+        "SELECT * FROM audit_events WHERE event IN ('Market.preview','Market.submit','Market.withdraw')"
+      )
+      .all()) {
+      assert.equal(event.object_type, "bid");
+      assert.equal(event.object_id, second.id);
+      assert.ok(
+        JSON.parse(String(event.scope)).every(
+          (s: { resourceId: string }) => s.resourceId === "project-a"
+        )
+      );
+    }
+  } finally {
+    f.db.close();
+  }
+});

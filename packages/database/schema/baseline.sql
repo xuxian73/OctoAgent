@@ -276,3 +276,6 @@ CREATE TABLE callback_nonces (
 CREATE TRIGGER audit_no_replace BEFORE INSERT ON audit_events
 WHEN EXISTS (SELECT 1 FROM audit_events WHERE sequence = NEW.sequence)
 BEGIN SELECT RAISE(ABORT, 'immutable audit'); END;
+
+ALTER TABLE audit_events ADD COLUMN object_type TEXT NOT NULL DEFAULT 'none';
+ALTER TABLE audit_events ADD COLUMN target_subject TEXT;

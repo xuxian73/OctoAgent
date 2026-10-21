@@ -106,7 +106,13 @@ export class SqliteIdentityStore implements IdentityStore {
       this.db.exec("SAVEPOINT credential_change");
       try {
         change();
-        new Audit(this.db).append(event, "success");
+        new Audit(this.db).append(event, "success", {
+          type: "credential",
+          id: value.digest,
+          targetSubject: value.agentId
+            ? "agent:" + value.agentId
+            : "user:" + value.userId
+        });
         this.db.exec("RELEASE credential_change");
       } catch (error) {
         this.db.exec(

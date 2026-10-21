@@ -2,6 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { Authorization, Scope } from "../../auth/src/index.js";
 import {
+  AuditObject,
   digest,
   requestContext,
   securityContext
@@ -9,22 +10,24 @@ import {
 import { RequirementError } from "../../requirements/src/model.js";
 export class Audit {
   constructor(private db: DatabaseSync) {}
-  append(event: string, result: string) {
+  append(event: string, result: string, object?: AuditObject) {
     const c = securityContext.getStore() || requestContext();
     this.db
       .prepare(
-        "INSERT INTO audit_events(request_id,actor_id,tenant_id,scope,object_id,event,result,summary,created_at) VALUES (?,?,?,?,?,?,?,?,?)"
+        "INSERT INTO audit_events(request_id,actor_id,tenant_id,scope,object_id,event,result,summary,created_at,object_type,target_subject) VALUES (?,?,?,?,?,?,?,?,?,?,?)"
       )
       .run(
         c.requestId,
         c.actor || "anonymous",
         c.tenant || "unknown",
         JSON.stringify(c.scopes),
-        c.scopes.at(-1)?.resourceId || "none",
+        object?.id || "none",
         c.operation ? event + ":" + c.operation : event,
         result,
         "业务调用；不记录输入、输出或错误原文",
-        Date.now()
+        Date.now(),
+        object?.type || "none",
+        object?.targetSubject || null
       );
   }
 }
@@ -32,7 +35,8 @@ export function audited<T extends object>(
   target: T,
   db: DatabaseSync,
   auth: Authorization,
-  names: string[]
+  names: string[],
+  objectFor?: (method: string, args: unknown[], result: unknown) => AuditObject
 ): T {
   return new Proxy(target, {
     get(object, property, receiver) {
@@ -48,6 +52,7 @@ export function audited<T extends object>(
         const c = {
           ...(outer || requestContext()),
           key: outer?.scopes.length ? undefined : outer?.key,
+          object: undefined as AuditObject | undefined,
           scopes: [] as Scope[]
         };
         return securityContext.run(c, () => {
@@ -137,15 +142,20 @@ export function audited<T extends object>(
             }
             const envelopeId = (result as { request_id?: unknown })?.request_id;
             if (typeof envelopeId === "string") c.requestId = envelopeId;
+            const rejected = !!(result as { error?: unknown })?.error;
+            if (!rejected && objectFor)
+              c.object = objectFor(property, args, result);
             new Audit(db).append(
               event,
               (result as { error?: unknown })?.error
                 ? "rejected"
                 : prior
                 ? "replayed"
-                : "success"
+                : "success",
+              rejected ? undefined : c.object
             );
             db.exec(nested ? "RELEASE audited_operation" : "COMMIT");
+            if (outer && !rejected && c.object) outer.object = c.object;
             return result;
           } catch (error) {
             db.exec(

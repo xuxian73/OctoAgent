@@ -77,13 +77,19 @@ export class Contracts {
     private auth: Authorization,
     private now = Date.now
   ) {
-    return audited(this, db, auth, [
-      "select",
-      "inspect",
-      "read",
-      "reputation",
-      "command"
-    ]);
+    return audited(
+      this,
+      db,
+      auth,
+      ["select", "inspect", "read", "reputation", "command"],
+      (method, args, result) => ({
+        type: method === "reputation" ? "agent" : "contract",
+        id:
+          method === "select"
+            ? (result as { id: string }).id
+            : (args[1] as string)
+      })
+    );
   }
   private transaction<T>(fn: () => T): T {
     this.db.exec("SAVEPOINT service_operation");

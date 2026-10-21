@@ -343,3 +343,91 @@ test("HTTP retries correlate audit and never echo sensitive exception content", 
     f.db.close();
   }
 });
+
+test("audit objects distinguish resources from scopes, including attachment replay and credentials", () => {
+  const f = fixture();
+  try {
+    const events = (event: string) =>
+      f.db
+        .prepare("SELECT * FROM audit_events WHERE event=? ORDER BY sequence")
+        .all(event);
+    const first = f.service.create(f.token, "project-a", {
+      values: {},
+      publicFields: []
+    });
+    const second = f.service.create(f.token, "project-a", {
+      values: {},
+      publicFields: []
+    });
+    assert.deepEqual(
+      events("Requirements.create").map(e => [e.object_type, e.object_id]),
+      [
+        ["requirement", first.id],
+        ["requirement", second.id]
+      ]
+    );
+    for (const event of events("Requirements.create")) {
+      assert.ok(
+        JSON.parse(String(event.scope)).every(
+          (s: { resourceId: string }) => s.resourceId === "project-a"
+        )
+      );
+    }
+    const key = randomUUID();
+    const attach = () =>
+      securityContext.run(requestContext(randomUUID(), key), () =>
+        f.service.addAttachment(f.token, first.id, {
+          revision: 1,
+          name: "test.txt",
+          mime: "text/plain",
+          size: 2
+        })
+      );
+    const attachment = attach();
+    assert.equal(attach().id, attachment.id);
+    f.service.attachment(f.token, first.id, attachment.id);
+    assert.deepEqual(
+      events("Requirements.addAttachment").map(e => [
+        e.object_type,
+        e.object_id,
+        e.result
+      ]),
+      [
+        ["attachment", attachment.id, "success"],
+        ["attachment", attachment.id, "replayed"]
+      ]
+    );
+    assert.equal(
+      events("Requirements.attachment")[0]!.object_id,
+      attachment.id
+    );
+    const session = f.auth.issueUserSession("seller");
+    const one = f.auth.issueAgentToken(session, "agent-a");
+    const two = f.auth.issueAgentToken(session, "agent-a");
+    f.auth.revoke(session, tokenDigest(one));
+    const issued = events("credential.issued").filter(
+      e => e.target_subject === "agent:agent-a"
+    );
+    assert.deepEqual(
+      issued.map(e => [e.actor_id, e.object_type, e.object_id]),
+      [
+        ["user:seller", "credential", tokenDigest(one)],
+        ["user:seller", "credential", tokenDigest(two)]
+      ]
+    );
+    const revoked = events("credential.revoked")[0]!;
+    assert.equal(revoked.object_id, issued[0]!.object_id);
+    assert.equal(revoked.target_subject, "agent:agent-a");
+    const privateId = randomBytes(32).toString("base64url");
+    assert.throws(() => f.service.read(f.token, privateId));
+    const rejected = events("Requirements.read").at(-1)!;
+    assert.equal(rejected.object_id, "none");
+    const audit = JSON.stringify(
+      f.db.prepare("SELECT * FROM audit_events").all()
+    );
+    for (const secret of [one, two, session, f.token, privateId])
+      assert.ok(!audit.includes(secret));
+  } finally {
+    f.db.close();
+  }
+});
