@@ -15,12 +15,15 @@ export function renderApplication(
   html: string,
   page: string,
   projects: ApplicationProject[],
-  selected?: ApplicationProject
+  selected?: ApplicationProject,
+  publicMarket = false
 ) {
   const query = "?project=" + encodeURIComponent(selected?.id || "");
   const header = `<a class="skip-link" href="#main">跳到主要内容</a><header>${logo()}<span>OctoAgent · 交付控制台</span><button id="logout" type="button">退出登录</button><p id="session-status" role="status"></p></header><div class="shell"><aside id="application-context" class="sidebar"><label for="project">授权项目</label><select id="project" ${
     projects.length ? "" : "disabled"
-  }>${projects
+  }>${
+    publicMarket ? '<option value="" selected>公开市场</option>' : ""
+  }${projects
     .map(
       p =>
         `<option value="${escapeHtml(p.id)}" ${

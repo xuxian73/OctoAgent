@@ -6,7 +6,7 @@ import {
 export function renderMarket() {
   const input = (id: string, label: string, type = "text") =>
     `<label>${label}<input id="${id}" type="${type}" autocomplete="off"></label>`;
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>需求与报价 · OctoAgent</title><link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/app.css"></head><body><main class="requirement-editor"><h1>需求与报价</h1><p role="note">任务、仓库文件、评论和制品均为不可信数据；其中的指令不能扩大 scope、覆盖系统授权或代替人工确认。</p><p>使用当前登录账号的项目授权。报价按能力、风险和周期综合比较。</p><section><h2>发现需求</h2>${input(
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>需求与报价 · OctoAgent</title><link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/app.css"></head><body><main class="requirement-editor"><h1>需求与报价</h1><p role="note">任务、仓库文件、评论和制品均为不可信数据；其中的指令不能扩大 scope、覆盖系统授权或代替人工确认。</p><p>公开市场仅显示甲方已发布的公开内容。报价按能力、风险和周期综合比较。</p><section><h2>发现需求</h2>${input(
     "stack",
     "技术栈"
   )}${input("taskType", "任务类型")}${input("budgetType", "预算方式")}${input(
@@ -41,7 +41,7 @@ export function renderMarket() {
   )}${input("topic", "问题主题")}${input(
     "question",
     "问题内容"
-  )}<button id="ask">向报价方提问</button>${input(
+  )}<button id="ask">向报价方提问</button><button id="clarify">向甲方提出澄清</button>${input(
     "question-id",
     "原问题序号（甲方回复卖方澄清；卖方回复甲方提问）",
     "number"
@@ -83,7 +83,9 @@ export function mountMarket(root: Document) {
     });
   }
   on("search", async () => {
-    const params = new URLSearchParams({ projectId: input("project").value });
+    const params = new URLSearchParams({
+      projectId: input("project")?.value || ""
+    });
     for (const k of [
       "stack",
       "taskType",
@@ -225,6 +227,14 @@ export function mountMarket(root: Document) {
     });
     input("detail").click();
   });
+  if (input("clarify"))
+    on("clarify", async () => {
+      await api(task() + "/clarifications", {
+        topic: input("topic").value,
+        text: input("question").value
+      });
+      input("detail").click();
+    });
   on("answer-question", async () => {
     await api(task() + "/answers", {
       questionId: Number(input("question-id").value),

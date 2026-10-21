@@ -237,13 +237,25 @@ export class Requirements {
       .get(id);
     if (!row) throw new RequirementError("NOT_FOUND", 404);
     const draft = JSON.parse(String(row.published)) as Draft;
+    const marketPublication = this.db
+      .prepare(
+        "SELECT 1 FROM requirement_changes c, json_each(c.changed_fields) f WHERE c.requirement_id=? AND f.value='market'"
+      )
+      .get(id);
+    if (
+      marketPublication &&
+      (!draft.market || draft.market.deadline <= this.now())
+    )
+      throw new RequirementError("NOT_FOUND", 404);
     return {
       id,
       version: row.version,
       values: Object.fromEntries(
         draft.publicFields.map(key => [key, draft.values[key]])
       ),
-      attachments: JSON.parse(String(row.published_attachments))
+      attachments: draft.market
+        ? []
+        : JSON.parse(String(row.published_attachments))
     };
   }
   addAttachment(token: string, id: string, input: unknown) {

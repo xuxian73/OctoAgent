@@ -58,6 +58,22 @@ export class Market {
       })
     );
   }
+  reauthorizeReplay(token: string, method: string, args: unknown[]) {
+    if (method === "supplement") this.bidAccess(token, String(args[1]), true);
+    else {
+      const { draft } = this.task(
+        token,
+        String(args[1]),
+        true,
+        method === "question"
+          ? "buyer"
+          : method === "answer"
+          ? undefined
+          : "seller"
+      );
+      if (method === "draft") this.open(draft.market!.deadline);
+    }
+  }
   private transaction<T>(fn: () => T): T {
     const nested = this.db.isTransaction;
     this.db.exec(nested ? "SAVEPOINT market_operation" : "BEGIN IMMEDIATE");
@@ -89,17 +105,42 @@ export class Market {
       resourceId: String(row.project_id),
       action: "read" as const
     };
-    const access = this.auth.authorize(
-      token,
-      scope,
-      role ? [role] : ["buyer", "seller"]
-    );
-    if (write)
-      this.auth.authorize(
+    let access: ReturnType<Authorization["authorize"]>;
+    try {
+      access = this.auth.authorize(
         token,
-        { ...scope, action: "write" },
+        scope,
         role ? [role] : ["buyer", "seller"]
       );
+      if (write)
+        this.auth.authorize(
+          token,
+          { ...scope, action: "write" },
+          role ? [role] : ["buyer", "seller"]
+        );
+    } catch (error) {
+      if (!(error instanceof ForbiddenError) || role === "buyer") throw error;
+      access = this.auth.authorize(
+        token,
+        { kind: "task", resourceId: id, action: "read" },
+        ["seller"]
+      );
+      if (write)
+        this.auth.authorize(
+          token,
+          { kind: "task", resourceId: id, action: "write" },
+          ["seller"]
+        );
+    }
+    if (
+      access.role === "seller" &&
+      this.db
+        .prepare(
+          "SELECT 1 FROM market_participations WHERE requirement_id=? AND user_id=? AND revoked=1"
+        )
+        .get(id, access.identity.responsibleUserId)
+    )
+      throw new ForbiddenError();
     const draft = JSON.parse(String(row.published)) as Draft;
     if (
       !draft.market ||
@@ -107,6 +148,16 @@ export class Market {
     )
       throw new ForbiddenError();
     return { row, draft, access };
+  }
+  private join(id: string, user: string) {
+    this.db
+      .prepare(
+        "INSERT OR IGNORE INTO market_participations(requirement_id,user_id) VALUES (?,?)"
+      )
+      .run(id, user);
+    this.db
+      .prepare("INSERT OR IGNORE INTO requirement_participants VALUES (?,?)")
+      .run(id, user);
   }
   // Recipient identity always comes from the session, never from query input.
   private notificationUser(token: string) {
@@ -133,11 +184,8 @@ export class Market {
       WHERE n.user_id = ? AND n.rowid > ? ORDER BY n.rowid`
       )
       .iterate(user, cursor)) {
-      let projectId: string;
       try {
-        projectId = String(
-          this.task(token, String(row.requirement_id)).row.project_id
-        );
+        this.task(token, String(row.requirement_id));
       } catch (error) {
         if (error instanceof ForbiddenError) continue;
         throw error;
@@ -148,11 +196,7 @@ export class Market {
         version: Number(row.version),
         event: "requirement_changed",
         readAt: row.read_at === null ? null : Number(row.read_at),
-        href:
-          "/market?project=" +
-          encodeURIComponent(projectId) +
-          "&task=" +
-          encodeURIComponent(String(row.requirement_id))
+        href: "/market?task=" + encodeURIComponent(String(row.requirement_id))
       });
       if (items.length > limit) break;
     }
@@ -217,6 +261,7 @@ export class Market {
   }
   clarify(token: string, id: string, topic: string, text: string) {
     const { access } = this.task(token, id, true, "seller");
+    this.join(id, access.identity.responsibleUserId);
     return this.event(
       id,
       access.identity.id,
@@ -229,10 +274,13 @@ export class Market {
     );
   }
   search(token: string, project: string, filters: Record<string, string> = {}) {
+    const publicSearch = !project;
     this.auth.authorize(
       token,
-      { kind: "project", resourceId: project, action: "read" },
-      ["buyer", "seller"]
+      project
+        ? { kind: "project", resourceId: project, action: "read" }
+        : { kind: "market", resourceId: "public", action: "read" },
+      project ? ["buyer", "seller"] : ["seller"]
     );
     if (
       (filters.allowAgents &&
@@ -248,11 +296,24 @@ export class Market {
     const results = [];
     for (const row of this.db
       .prepare(
-        "SELECT id FROM requirements WHERE project_id = ? AND version > 0 ORDER BY id"
+        "SELECT id FROM market_publications WHERE (? = '' OR project_id = ?) ORDER BY id"
       )
-      .all(project)) {
+      .all(project, project)) {
       try {
-        const detail = this.detail(token, String(row.id));
+        const identity = this.auth.identity(token);
+        const detail = publicSearch
+          ? { ...this.projection(String(row.id)), timeline: [] }
+          : this.detail(token, String(row.id));
+        if (
+          publicSearch &&
+          ((identity.kind === "agent" && !detail.market.allowAgents) ||
+            this.db
+              .prepare(
+                "SELECT 1 FROM market_participations WHERE requirement_id=? AND user_id=? AND revoked=1"
+              )
+              .get(String(row.id), identity.responsibleUserId))
+        )
+          continue;
         const m = detail.market!;
         // Only published, authorized fields participate in filtering.
         if (
@@ -284,7 +345,9 @@ export class Market {
           continue;
         if (
           ["taskType", "budgetType"].some(
-            k => filters[k] && detail.values[k] !== filters[k]
+            k =>
+              filters[k] &&
+              detail.values[k as "taskType" | "budgetType"] !== filters[k]
           )
         )
           continue;
@@ -298,7 +361,7 @@ export class Market {
           continue;
         if (filters.deadlineAfter && m.deadline < Number(filters.deadlineAfter))
           continue;
-        results.push(detail);
+        results.push({ ...detail, timeline: [] });
       } catch (e) {
         if (!(e instanceof ForbiddenError)) throw e;
       }
@@ -306,16 +369,21 @@ export class Market {
     return results;
   }
   detail(token: string, id: string) {
-    const { row, draft } = this.task(token, id);
+    // Task authorization preserves management and existing participation after closing.
+    this.task(token, id);
+    return { ...this.projection(id), timeline: this.timeline(token, id) };
+  }
+  private projection(id: string) {
+    const row = this.db
+      .prepare("SELECT * FROM market_publications WHERE id=?")
+      .get(id);
+    if (!row) throw new ForbiddenError();
     return {
       id,
       version: Number(row.version),
-      market: draft.market,
-      values: Object.fromEntries(
-        draft.publicFields.map(k => [k, draft.values[k]])
-      ),
-      attachments: JSON.parse(String(row.published_attachments)),
-      timeline: this.timeline(token, id)
+      market: JSON.parse(String(row.market)) as NonNullable<Draft["market"]>,
+      values: JSON.parse(String(row.public_values)) as Draft["values"],
+      attachments: []
     };
   }
   private event(
@@ -337,6 +405,7 @@ export class Market {
     this.open(draft.market!.deadline);
     const proposal = parseProposal(input);
     return this.transaction(() => {
+      this.join(taskId, access.identity.responsibleUserId);
       const version =
         Number(
           this.db

@@ -46,14 +46,15 @@ async function executeRoute(
         chunks.push(bytes);
       }
       const stored = files.upload(token, input, Buffer.concat(chunks));
-      if (stored.scan_status === "quarantined") files.scan(String(stored.id));
+      if (stored.scan_status === "quarantined")
+        await files.scan(String(stored.id), String(stored.actor));
       data = files.metadata(token, String(stored.id));
     } else if (
       request.method === "POST" &&
       parts.length === 5 &&
       parts[4] === "scan"
     ) {
-      data = files.retry(token, parts[3]!);
+      data = await files.retry(token, parts[3]!);
     } else if (request.method === "GET" && parts.length === 3) {
       data = files.list(
         token,

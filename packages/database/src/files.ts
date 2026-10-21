@@ -20,7 +20,11 @@ export interface ByteScanner {
   scan(
     bytes: Uint8Array,
     checksum: string
-  ): "clean" | "rejected" | "unavailable";
+  ):
+    | "clean"
+    | "rejected"
+    | "unavailable"
+    | Promise<"clean" | "rejected" | "unavailable">;
 }
 export interface FileBinding {
   kind: "requirement" | "artifact";
@@ -283,60 +287,106 @@ export class Files {
     return row;
   }
   /** Atomic lease; expired/crashed attempts can be retried, old results cannot win. */
-  scan(id: string) {
+  async scan(id: string, actor = "system:scanner", retry = false) {
     const attempt = randomUUID();
     const now = Date.now();
-    const claimed = this.db
-      .prepare(
-        `UPDATE private_files SET scan_status = 'scanning',
+    const scanner = this.scanner?.name || "none";
+    const audit = (event: string, status: string, checksum: string) => {
+      this.db
+        .prepare(
+          "INSERT INTO file_scan_events(file_id,attempt_id,checksum,scanner,actor,event,status,created_at) VALUES (?,?,?,?,?,?,?,?)"
+        )
+        .run(id, attempt, checksum, scanner, actor, event, status, Date.now());
+    };
+    const transaction = <T>(action: () => T): T => {
+      this.db.exec("BEGIN IMMEDIATE");
+      try {
+        const result = action();
+        this.db.exec("COMMIT");
+        return result;
+      } catch (error) {
+        this.db.exec("ROLLBACK");
+        throw error;
+      }
+    };
+    const row = transaction(() => {
+      const previous = this.db
+        .prepare("SELECT * FROM private_files WHERE id = ?")
+        .get(id);
+      if (!previous) return undefined;
+      const claimed = this.db
+        .prepare(
+          `UPDATE private_files SET scan_status = 'scanning',
       scan_attempt = ?, scan_started_at = ?, scanned_at = NULL, scan_checksum = NULL,
       scanner = ?, simulated = ? WHERE id = ? AND
       (scan_status <> 'scanning' OR scan_started_at < ?)`
-      )
-      .run(
-        attempt,
-        now,
-        this.scanner?.name || "none",
-        this.scanner?.simulated ? 1 : 0,
-        id,
-        now - 120000
+        )
+        .run(
+          attempt,
+          now,
+          this.scanner?.name || "none",
+          this.scanner?.simulated ? 1 : 0,
+          id,
+          now - 120000
+        );
+      if (!claimed.changes) {
+        audit(
+          "claim_denied",
+          String(previous.scan_status),
+          String(previous.checksum)
+        );
+        return undefined;
+      }
+      audit(
+        retry ? "retry_claimed" : "claimed",
+        "scanning",
+        String(previous.checksum)
       );
-    if (!claimed.changes) return;
-    const row = this.db
-      .prepare("SELECT bytes, checksum, size FROM private_files WHERE id = ?")
-      .get(id)!;
+      return previous;
+    });
+    if (!row) return;
     const bytes = Buffer.from(row.bytes as Uint8Array);
     let status: ScanStatus = "unavailable";
     if (digest(bytes) === row.checksum && bytes.length === row.size) {
       try {
         status =
-          this.scanner?.scan(bytes, String(row.checksum)) || "unavailable";
+          (await this.scanner?.scan(bytes, String(row.checksum))) ||
+          "unavailable";
       } catch {
         status = "unavailable";
       }
     }
     if (!["clean", "rejected", "unavailable"].includes(status))
       status = "unavailable";
-    this.db
-      .prepare(
-        `UPDATE private_files SET scan_status = ?, scan_checksum = ?, scanned_at = ?
+    transaction(() => {
+      const completed = this.db
+        .prepare(
+          `UPDATE private_files SET scan_status = ?, scan_checksum = ?, scanned_at = ?
       WHERE id = ? AND checksum = ? AND bytes = ? AND scan_attempt = ? AND scan_status = 'scanning'`
-      )
-      .run(
+        )
+        .run(
+          status,
+          String(row.checksum),
+          Date.now(),
+          id,
+          String(row.checksum),
+          bytes,
+          attempt
+        );
+      audit(
+        completed.changes ? "completed" : "discarded",
         status,
-        String(row.checksum),
-        Date.now(),
-        id,
-        String(row.checksum),
-        bytes,
-        attempt
+        String(row.checksum)
       );
+    });
   }
   retry(token: string, id: string) {
     const row = this.metadata(token, id);
     this.access(token, this.binding(row), true);
-    this.scan(id);
-    return this.metadata(token, id);
+    const identity = this.auth.identity(token);
+    return this.scan(id, identity.kind + ":" + identity.id, true).then(() =>
+      this.metadata(token, id)
+    );
   }
   download(token: string, id: string) {
     const metadata = this.metadata(token, id);

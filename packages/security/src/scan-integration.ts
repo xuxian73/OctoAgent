@@ -37,7 +37,7 @@ try {
     const path = join(directory, name!);
     writeFileSync(path, content!, { mode: 0o600 });
     const bytes = readFileSync(path);
-    const actual = scanner.scan(
+    const actual = await scanner.scan(
       bytes,
       createHash("sha256")
         .update(bytes)

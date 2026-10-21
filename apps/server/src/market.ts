@@ -78,6 +78,17 @@ async function executeRoute(
       data = service.timeline(token, id);
     else if (path.length === 5 && method === "POST" && action === "bids")
       data = service.draft(token, id, body.proposal);
+    else if (
+      path.length === 5 &&
+      method === "POST" &&
+      action === "clarifications"
+    )
+      data = service.clarify(
+        token,
+        id,
+        body.topic as string,
+        body.text as string
+      );
     else if (path.length === 5 && method === "POST" && action === "questions")
       data = service.question(token, id, body.recipient, body.topic, body.text);
     // Both reply directions use the original event ID; Market derives the

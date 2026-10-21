@@ -711,7 +711,12 @@ test("seller onboarding is isolated, retryable, editable and preserves buyer aut
       (await f.call("/requirements?project=" + buyer.projectId)).status,
       200
     );
-    assert.equal((await f.call("/market")).status, 200);
+    const publicMarket = await f.call("/market");
+    assert.equal(publicMarket.status, 200);
+    assert.match(
+      publicMarket.body,
+      /<option value="" selected>公开市场<\/option>/
+    );
     // A seller can subsequently use the existing buyer initialization flow.
     assert.equal(
       (await f.create("seller-becomes-buyer", f.body, other)).status,

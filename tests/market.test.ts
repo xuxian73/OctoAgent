@@ -114,10 +114,7 @@ test("recipient notifications paginate, persist reads and recheck revoked access
     const first = await request(f.market, f.seller, "/notifications?limit=1");
     assert.equal(first.status, 200);
     assert.equal(first.body.data.items[0].version, 2);
-    assert.equal(
-      first.body.data.items[0].href,
-      `/market?project=project-a&task=${id}`
-    );
+    assert.equal(first.body.data.items[0].href, `/market?task=${id}`);
     const second = f.market.notifications(
       f.seller,
       first.body.data.nextCursor,
@@ -359,7 +356,7 @@ test("agent drafts require the responsible human; submission retries are atomic 
     assert.equal(f.market.bid(f.seller, bid.id).status, "draft");
     assert.equal(
       f.db.prepare("SELECT count(*) n FROM requirement_participants").get()!.n,
-      0
+      1 // Drafting already established participation; failed submit adds nothing.
     );
     f.db.exec("DROP TRIGGER reject_event");
     const submitted = f.market.submit(
@@ -423,7 +420,7 @@ test("confirmation expires and published requirement changes require a new bid v
     f.req.publish(f.buyer, id, f.req.preview(f.buyer, id).confirmation, true);
     assert.equal(
       f.db.prepare("SELECT count(*) n FROM requirement_notifications").get()!.n,
-      1
+      2 // Both publications notify the participant, including the draft stage.
     );
   } finally {
     f.db.close();
@@ -821,6 +818,16 @@ test("market browser controls submit a confirmed bid and render two comparison c
       await new Promise<void>(resolve => setImmediate(resolve));
   }
   try {
+    const { Onboarding } = await import(
+      "../packages/database/src/onboarding.js"
+    );
+    new Onboarding(f.db, f.auth).create(f.seller, {
+      role: "seller",
+      displayName: "测试乙方",
+      capabilities: "TypeScript",
+      taskTypes: "新功能",
+      bio: "离线测试"
+    });
     const id = f.publish();
     elements.get("session")!.value = f.seller;
     elements.get("project")!.value = "project-a";
@@ -857,6 +864,7 @@ test("market browser controls submit a confirmed bid and render two comparison c
       elements.get("comparison")!.children[0]!.children[0]!.children.length,
       3
     );
+    f.advance(899000);
     const question = f.market.clarify(f.seller, id, "验收", "请说明命令");
     await click("detail");
     const replyButton = elements

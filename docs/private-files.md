@@ -17,7 +17,7 @@
 
 ## 扫描边界
 
-新文件一律 quarantined。服务端 `ByteScanner` 接口读取真实字节及服务器摘要，`Files.scan(id)` 由可信后台调用；HTTP 不允许修改扫描状态。无扫描器时扫描结果为 unverifiable，异常为 failed；infected、failed、unverifiable、quarantined 均阻止下载、真实文件导入和提交。测试显式注入 `simulated: true` 的确定性适配器，UI 和制品证据保留模拟标记；本项没有生产扫描器或自动扫描任务。
+新文件一律 quarantined。服务端异步 ByteScanner 扫描持久化字节及服务器摘要，进入 scanning 后写入 clean/rejected/unavailable；HTTP 不允许指定状态。ClamAV 子进程全进程并发上限为 2，超额请求失败关闭，可授权重试；健康接口读取每 60 秒后台更新的缓存。只有当前 checksum 对应的非模拟 clean 允许下载、Git 导入和交付。扫描状态和不可变 file_scan_events 审计记录原子提交，重试保留历史尝试及操作者，旧尝试回写记录为 discarded。
 
 ## 事务、重试与恢复
 

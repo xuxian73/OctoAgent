@@ -1,7 +1,10 @@
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { isAbsolute } from "node:path";
 import { ByteScanner } from "../../database/src/files.js";
+
+let activeScans = 0;
+const maxConcurrentScans = 2;
 
 /** Deployment configuration only. No shell, user arguments, paths or archive extraction. */
 export class ClamAVScanner implements ByteScanner {
@@ -19,10 +22,10 @@ export class ClamAVScanner implements ByteScanner {
     )
       throw new Error("INVALID_SCANNER_CONFIGURATION");
   }
-  scan(
+  async scan(
     bytes: Uint8Array,
     checksum: string
-  ): "clean" | "rejected" | "unavailable" {
+  ): Promise<"clean" | "rejected" | "unavailable"> {
     if (
       bytes.length > 10485760 ||
       createHash("sha256")
@@ -37,51 +40,90 @@ export class ClamAVScanner implements ByteScanner {
         .toString() === "PK"
     )
       return "rejected";
+    // Global admission limit: overload fails closed without an unbounded queue.
+    if (activeScans >= maxConcurrentScans) return "unavailable";
+    activeScans++;
     try {
-      const result = spawnSync(
-        this.executable,
-        [
-          "--no-summary",
-          "--stdout",
-          "--scan-archive=no",
-          "--alert-exceeds-max=yes",
-          "--max-filesize=10M",
-          "--max-scansize=10M",
-          "-"
-        ],
-        {
-          input: bytes,
-          timeout: this.timeout,
-          killSignal: "SIGKILL",
-          maxBuffer: 65536,
-          env: { PATH: "/usr/bin:/bin", LANG: "C" },
-          windowsHide: true
+      return await new Promise<"clean" | "rejected" | "unavailable">(
+        resolve => {
+          const child = spawn(
+            this.executable,
+            [
+              "--no-summary",
+              "--stdout",
+              "--scan-archive=no",
+              "--alert-exceeds-max=yes",
+              "--max-filesize=10M",
+              "--max-scansize=10M",
+              "-"
+            ],
+            {
+              stdio: ["pipe", "ignore", "ignore"],
+              env: { PATH: "/usr/bin:/bin", LANG: "C" },
+              windowsHide: true
+            }
+          );
+          let timedOut = false;
+          const timer = setTimeout(() => {
+            timedOut = true;
+            child.kill("SIGKILL");
+          }, this.timeout);
+          child.stdin.on("error", () => {});
+          child.on("error", () => {
+            clearTimeout(timer);
+            resolve("unavailable");
+          });
+          child.on("close", (code, signal) => {
+            clearTimeout(timer);
+            resolve(
+              timedOut || signal
+                ? "unavailable"
+                : code === 0
+                ? "clean"
+                : code === 1
+                ? "rejected"
+                : "unavailable"
+            );
+          });
+          child.stdin.end(bytes);
         }
       );
-      // Never expose output: it can contain private content, host paths or signatures.
-      if (result.error || result.signal) return "unavailable";
-      return result.status === 0
-        ? "clean"
-        : result.status === 1
-        ? "rejected"
-        : "unavailable";
     } catch {
       return "unavailable";
+    } finally {
+      activeScans--;
     }
   }
+  private cachedHealth = { scanner: this.name, status: "unavailable" };
+  private probe?: Promise<void>;
   health() {
+    return { ...this.cachedHealth };
+  }
+  refreshHealth(): Promise<void> {
+    if (this.probe) return this.probe;
     const bytes = Buffer.from("OctoAgent scanner health probe\n");
-    return {
-      scanner: this.name,
-      status:
-        this.scan(
-          bytes,
-          createHash("sha256")
-            .update(bytes)
-            .digest("hex")
-        ) === "clean"
-          ? "available"
-          : "unavailable"
-    };
+    this.probe = this.scan(
+      bytes,
+      createHash("sha256")
+        .update(bytes)
+        .digest("hex")
+    )
+      .then(result => {
+        this.cachedHealth = {
+          scanner: this.name,
+          status: result === "clean" ? "available" : "unavailable"
+        };
+      })
+      .finally(() => {
+        this.probe = undefined;
+      });
+    return this.probe;
   }
 }
+
+// Public requests only read this cache; probes run independently of request traffic.
+export const healthScanner = new ClamAVScanner();
+void healthScanner.refreshHealth();
+setInterval(() => {
+  void healthScanner.refreshHealth();
+}, 60000).unref();

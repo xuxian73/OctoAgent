@@ -1,4 +1,4 @@
-import { ClamAVScanner } from "../../../packages/security/src/clamav.js";
+import { healthScanner } from "../../../packages/security/src/clamav.js";
 import { Files } from "../../../packages/database/src/files.js";
 import { fileRoute } from "./files.js";
 import { Agents } from "../../../packages/database/src/agents.js";
@@ -167,12 +167,11 @@ export function handleRequest(
       ) {
         response.end(
           renderApplication(
-            emptyApplication("可接任务").replace(
-              "</main>",
-              '<p>乙方资料已完成。公开任务检索将在后续开放；当前暂无可接任务。</p><a href="/onboarding#seller">编辑乙方资料</a><a href="/onboarding#buyer">发布需求：创建首个项目</a></main>'
-            ),
+            renderMarket(),
             "market",
-            (context.projects as unknown) as ApplicationProject[]
+            (context.projects as unknown) as ApplicationProject[],
+            undefined,
+            true
           )
         );
         return;
@@ -304,7 +303,7 @@ export function handleRequest(
     if (request.method === "GET" && path === "/api/health") {
       const body: ApiResult<Health> = {
         ok: true,
-        data: { status: "ok", fileScanner: new ClamAVScanner().health() },
+        data: { status: "ok", fileScanner: healthScanner.health() },
         request_id: requestId
       };
       response.setHeader("Content-Type", "application/json; charset=utf-8");
