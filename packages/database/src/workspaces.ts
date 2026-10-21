@@ -267,6 +267,19 @@ export class Workspaces {
         result = { text: value };
       } else if (action === "submit_milestone") {
         const sha = text(input.sha);
+        const milestoneId = text(input.milestoneId);
+        const boundFileIds = new Set(
+          this.db
+            .prepare(
+              "SELECT id FROM private_files WHERE kind = 'artifact' AND resource_id = ? AND version = ? AND milestone_id = ? AND sha = ?"
+            )
+            .all(id, contract.version, milestoneId, sha)
+            .map(file => String(file.id))
+        );
+        // Legacy metadata-only artifacts remain explicitly simulated evidence.
+        const artifacts = state.artifacts.filter(
+          a => a.sha === sha && (!a.fileId || boundFileIds.has(a.fileId))
+        );
         const commit = state.commits.find(
           c => c.sha === sha && c.version === contract.version
         );
@@ -279,24 +292,12 @@ export class Workspaces {
                 ?.passed
           ) ||
           !state.pullRequests.some(p => p.sha === sha) ||
-          !state.artifacts.some(a => a.sha === sha)
+          artifacts.length === 0
         )
           throw new RequirementError("EVIDENCE_INCOMPLETE", 409);
-        const milestoneId = text(input.milestoneId);
-        for (const artifact of state.artifacts.filter(
-          a => a.sha === sha && a.fileId
-        )) {
-          const file = new Files(this.db, this.auth).download(
-            token,
-            artifact.fileId!
-          ).metadata;
-          if (
-            file.resource_id !== id ||
-            file.version !== contract.version ||
-            file.milestone_id !== milestoneId ||
-            file.sha !== sha
-          )
-            throw new RequirementError("ARTIFACT_BINDING_MISMATCH", 409);
+        for (const artifact of artifacts) {
+          if (artifact.fileId)
+            new Files(this.db, this.auth).download(token, artifact.fileId);
         }
 
         const milestone = contract.milestones.find(
@@ -323,9 +324,7 @@ export class Workspaces {
             throw new RequirementError("INVALID_PREVIEW_URL");
         }
         result = {
-          simulated: state.artifacts
-            .filter(a => a.sha === sha)
-            .some(a => !a.fileId || a.simulated),
+          simulated: artifacts.some(a => !a.fileId || a.simulated),
           milestoneId,
           sha,
           version: contract.version,
@@ -334,7 +333,7 @@ export class Workspaces {
           risks: [...state.risks],
           checks: state.checks.filter(c => c.sha === sha),
           pullRequests: state.pullRequests.filter(p => p.sha === sha),
-          artifacts: state.artifacts.filter(a => a.sha === sha)
+          artifacts
         };
         state.submissions.push(result);
         this.db

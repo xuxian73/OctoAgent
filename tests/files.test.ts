@@ -291,7 +291,7 @@ test("HTTP concurrent retries, raw download headers and per-request revoked auth
     f.db.close();
   }
 });
-test("contract artifact binding and scan gate apply at import", () => {
+test("shared SHA submissions isolate milestone artifacts and enforce binding and scan gates", () => {
   const f = setup();
   f.activate();
   const id = f.current().id;
@@ -359,6 +359,30 @@ test("contract artifact binding and scan gate apply at import", () => {
       milestoneId: input.milestoneId,
       summary: "verified bytes"
     };
+    const secondSubmission = {
+      ...submission,
+      milestoneId: String(f.current().milestones[1]!.id)
+    };
+    // Another milestone's file cannot satisfy this milestone's evidence.
+    assert.throws(
+      () => command("submit_milestone", secondSubmission),
+      /EVIDENCE_INCOMPLETE/
+    );
+    const secondFile = files.upload(
+      f.seller,
+      {
+        ...input,
+        milestoneId: secondSubmission.milestoneId,
+        requestKey: "artifact-2"
+      },
+      Buffer.from("second build")
+    );
+    files.scan(String(secondFile.id));
+    command("upload_artifact", {
+      fileId: secondFile.id,
+      sha,
+      milestoneId: secondSubmission.milestoneId
+    });
     new Files(f.db, f.auth, { ...scanner, scan: () => "infected" }).scan(
       String(file.id)
     );
@@ -371,8 +395,30 @@ test("contract artifact binding and scan gate apply at import", () => {
       () => command("submit_milestone", submission),
       /SCAN_BLOCKED/
     );
+    // An unrelated file's blocked scan must not block this submission.
+    command("submit_milestone", secondSubmission);
     files.scan(String(file.id));
     command("submit_milestone", submission);
+    const view = workspace.read(f.buyer, id);
+    const imported = view.artifacts;
+    assert.deepEqual(
+      view.submissions.map(value => {
+        const evidence = value as {
+          milestoneId: string;
+          artifacts: typeof imported;
+        };
+        return [evidence.milestoneId, evidence.artifacts.map(a => a.fileId)];
+      }),
+      [
+        [secondSubmission.milestoneId, [secondFile.id]],
+        [submission.milestoneId, [file.id]]
+      ]
+    );
+    assert.ok(
+      f.contracts
+        .read(f.buyer, id)
+        .milestones.every(m => m.status === "submitted")
+    );
     assert.equal(
       (workspace.read(f.buyer, id).submissions[0] as { simulated: boolean })
         .simulated,
