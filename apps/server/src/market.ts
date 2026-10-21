@@ -49,7 +49,24 @@ async function executeRoute(
     const query = Object.fromEntries(
       new URL(request.url || "/", "http://localhost").searchParams
     );
-    if (method === "GET" && path.length === 3)
+    if (method === "GET" && path.length === 4 && id === "notifications")
+      data = service.notifications(
+        token,
+        Number(query.cursor ?? 0),
+        Number(query.limit ?? 20)
+      );
+    else if (
+      method === "POST" &&
+      path.length === 7 &&
+      id === "notifications" &&
+      path[6] === "read"
+    )
+      data = service.readNotification(
+        token,
+        decodeURIComponent(path[4]!),
+        Number(path[5])
+      );
+    else if (method === "GET" && path.length === 3)
       data = service.search(token, query.projectId || "", query);
     else if (method === "GET" && path.length === 4)
       data = service.detail(token, id);

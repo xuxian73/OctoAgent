@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -24,10 +24,18 @@ test("fresh migration matches schema, is repeatable and detects tampering", () =
       inspection.prepare(schema).all(),
       expected.prepare(schema).all()
     );
-    assert.equal(
-      inspection.prepare("SELECT count(*) AS count FROM _migrations").get()!
-        .count,
-      13
+    const appliedMigrations = inspection
+      .prepare("SELECT name FROM _migrations ORDER BY name")
+      .all()
+      .map(row => row.name);
+    // Include main's disputes migration and this branch's notification reads.
+    assert.ok(appliedMigrations.includes("0013_disputes.sql"));
+    assert.ok(appliedMigrations.includes("0014_notification_reads.sql"));
+    assert.deepEqual(
+      appliedMigrations,
+      readdirSync("packages/database/migrations")
+        .filter(name => name.endsWith(".sql"))
+        .sort()
     );
     inspection.exec("UPDATE _migrations SET checksum = 'modified'");
     assert.throws(() => database.migrate(), /modified/);
@@ -46,6 +54,74 @@ test("unsupported database providers fail without leaking connection data", () =
     () => openDatabase("unsupported://example.invalid"),
     /^Error: DATABASE_URL must be a nonempty file: SQLite path$/
   );
+});
+
+test("main database upgrades preserve notifications and durable idempotent reads", async () => {
+  const { Authorization } = await import("../packages/auth/src/index.js");
+  const { seedIdentities } = await import("./fixtures/identity.js");
+  const directory = mkdtempSync(join(tmpdir(), "octo-notifications-"));
+  const path = join(directory, "upgrade.sqlite");
+  let database = openDatabase(`file:${path}`);
+  try {
+    database.migrate();
+    const seed = new DatabaseSync(path);
+    try {
+      seed.exec("PRAGMA foreign_keys = ON");
+      // Reproduce main's schema and migration ledger before notification reads.
+      seed.exec(`DROP TABLE requirement_notification_reads;
+        DELETE FROM _migrations WHERE name = '0014_notification_reads.sql';`);
+      assert.equal(
+        seed.prepare("SELECT count(*) AS n FROM _migrations").get()!.n,
+        13
+      );
+      assert.ok(
+        seed
+          .prepare("SELECT 1 FROM _migrations WHERE name = '0013_disputes.sql'")
+          .get()
+      );
+      seedIdentities(seed);
+      seed.exec(`INSERT INTO requirements VALUES
+        ('task', 'project-a', 2, 2, '{}', '{"market":{"allowAgents":true}}', '[]');
+        INSERT INTO requirement_changes VALUES ('task', 2, 'buyer', '[]');
+        INSERT INTO requirement_notifications VALUES
+        ('task', 2, 'seller', 'requirement_changed');`);
+    } finally {
+      seed.close();
+    }
+    database.migrate();
+    let auth = new Authorization(database.identities, () => 1000);
+    const token = auth.issueUserSession("seller");
+    let market = database.market(auth);
+    assert.equal(market.notifications(token).items[0]!.readAt, null);
+    const marked = market.readNotification(token, "task", 2);
+    database.close();
+    database = openDatabase(`file:${path}`);
+    database.migrate();
+    auth = new Authorization(database.identities, () => 1000);
+    market = database.market(auth);
+    assert.equal(market.notifications(token).items[0]!.readAt, marked.readAt);
+    assert.deepEqual(market.readNotification(token, "task", 2), marked);
+    const inspection = new DatabaseSync(path);
+    try {
+      assert.equal(
+        inspection
+          .prepare(
+            "SELECT count(*) AS n FROM audit_events WHERE event = 'Market.readNotification'"
+          )
+          .get()!.n,
+        1
+      );
+      assert.equal(
+        inspection.prepare("SELECT count(*) AS n FROM _migrations").get()!.n,
+        14
+      );
+    } finally {
+      inspection.close();
+    }
+  } finally {
+    database.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test("identity credentials and revocation survive closing and reopening the database", async () => {

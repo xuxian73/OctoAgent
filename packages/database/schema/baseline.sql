@@ -284,6 +284,15 @@ ALTER TABLE audit_events ADD COLUMN permission TEXT;
 ALTER TABLE audit_events ADD COLUMN permission_action TEXT CHECK (permission_action IN ('grant', 'revoke'));
 ALTER TABLE audit_events ADD COLUMN permission_expires_at INTEGER;
 
+CREATE TABLE requirement_notification_reads (
+  requirement_id TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  user_id TEXT NOT NULL,
+  read_at INTEGER NOT NULL,
+  PRIMARY KEY (requirement_id, version, user_id),
+  FOREIGN KEY (requirement_id, version, user_id) REFERENCES requirement_notifications(requirement_id, version, user_id)
+);
+
 -- Password material is isolated from business records; sessions remain digest-only.
 CREATE TABLE local_accounts (
   username TEXT PRIMARY KEY NOT NULL,
