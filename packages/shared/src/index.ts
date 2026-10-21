@@ -1,5 +1,5 @@
 export interface ApiError {
-  code: "NOT_FOUND" | "INTERNAL_ERROR";
+  code: "NOT_FOUND" | "INTERNAL_ERROR" | "FORBIDDEN";
   message: string;
 }
 export type ApiResult<T> =
