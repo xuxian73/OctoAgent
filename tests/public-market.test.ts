@@ -1,3 +1,4 @@
+import { FakeGitHubProvider } from "../packages/delivery/src/github.js";
 import { FakeScanner } from "../packages/security/src/index.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -538,7 +539,12 @@ test("cross-organization orders, contract roles and explicit expiring delivery d
   const f = await setup();
   try {
     const contracts = new Contracts(f.db, f.auth, () => 1000);
-    const workspaces = new Workspaces(f.db, f.auth, () => 1000);
+    const workspaces = new Workspaces(
+      f.db,
+      f.auth,
+      () => 1000,
+      new FakeGitHubProvider()
+    );
     const task = f.create();
     f.publish(task);
     const submit = (token: string) => {

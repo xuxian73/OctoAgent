@@ -69,6 +69,8 @@ export function audited<T extends object>(
             "migrate",
             "delete",
             "expand_permissions",
+            "initialize_repository",
+            "import_artifact",
             "create_workspace_branch",
             "commit",
             "run_check",

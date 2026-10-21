@@ -7,6 +7,7 @@ services:
       HOST: 0.0.0.0
       PORT: 3000
       APP_URL: http://localhost:3000
+      GIT_REPOSITORY_ROOT: /app/.data/git
       DATABASE_URL: file:/app/.data/octoagent.sqlite
     volumes:
       - database:/app/.data

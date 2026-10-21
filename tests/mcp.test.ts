@@ -1,3 +1,4 @@
+import { FakeGitHubProvider } from "../packages/delivery/src/github.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Ajv2020 } from "ajv/dist/2020.js";
@@ -31,7 +32,12 @@ function fixture() {
   ]);
   const buyer = f.auth.issueAgentToken(f.buyer, "buyer-agent", scopes);
   const seller = f.auth.issueAgentToken(f.seller, "agent-a", scopes);
-  const workspaces = new Workspaces(f.db, f.auth, () => 1000);
+  const workspaces = new Workspaces(
+    f.db,
+    f.auth,
+    () => 1000,
+    new FakeGitHubProvider()
+  );
   for (const permission of [
     "branch",
     "check",
