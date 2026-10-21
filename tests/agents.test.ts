@@ -108,6 +108,7 @@ test("owner API creates agents, confirms bounded scopes, isolates credentials an
         undefined,
         undefined,
         undefined,
+        undefined,
         service
       );
     });

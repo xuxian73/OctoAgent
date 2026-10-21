@@ -1,6 +1,8 @@
 import { Agents } from "../../../packages/database/src/agents.js";
 import { agentRoute } from "./agents.js";
 import { renderAgents } from "../../web/src/agents.js";
+import { Disputes } from "../../../packages/database/src/disputes.js";
+import { disputeRoute } from "./disputes.js";
 import {
   renderApplication,
   emptyApplication,
@@ -61,6 +63,7 @@ export function handleRequest(
   workspaces?: Workspaces,
   login?: Login,
   onboarding?: Onboarding,
+  disputes?: Disputes,
   agents?: Agents
 ): void {
   const requestId = randomUUID();
@@ -167,6 +170,45 @@ export function handleRequest(
           projects,
           selected
         )
+      );
+      return;
+    }
+    if (path === "/api/disputes" || path.startsWith("/api/disputes/")) {
+      void disputeRoute(request, response, requestId, disputes);
+      return;
+    }
+    if (request.method === "GET" && /^\/disputes\/[^/]+$/.test(path)) {
+      if (!disputes) throw new ForbiddenError();
+      const view = disputes.read(webToken(request), path.split("/")[2]!);
+      const entities: Record<string, string> = {
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      };
+      const escape = (value: unknown) =>
+        String(value).replace(/[&<>"']/g, char => entities[char]!);
+      response.setHeader("Content-Type", "text/html; charset=utf-8");
+      response.end(
+        `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>争议案件</title><link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/app.css"><main><h1>争议案件（只读）</h1><p>案件 ${escape(
+          view.id
+        )} · 合同保持冻结</p><h2>脱敏审计</h2><ul>${view.audit
+          .map(
+            e =>
+              `<li>${escape(e.created_at)} · ${escape(e.event)} · ${escape(
+                e.result
+              )}</li>`
+          )
+          .join("") ||
+          "<li>暂无审计</li>"}</ul><h2>双方明确提交的证据引用</h2><p>引用不授予源内容或私有仓库访问权限。</p><ul>${view.evidence
+          .map(
+            e =>
+              `<li>${
+                e.party === "buyer" ? "甲方" : "乙方"
+              } · 合同事件 #${escape(e.event_sequence)} · ${escape(e.id)}</li>`
+          )
+          .join("") || "<li>暂无提交证据</li>"}</ul></main></html>`
       );
       return;
     }
