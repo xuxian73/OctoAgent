@@ -1,3 +1,4 @@
+import { Login } from "./login.js";
 import { MarketplaceMcp } from "../../../packages/mcp/src/index.js";
 import { mcpRoute } from "./mcp.js";
 import { randomUUID } from "node:crypto";
@@ -12,6 +13,7 @@ const database = openDatabase(
   process.env.DATABASE_URL || "file:./.data/octoagent.sqlite"
 );
 const authorization = new Authorization(database.identities);
+const login = new Login(database.accounts, authorization);
 const mcp = new MarketplaceMcp({
   auth: authorization,
   requirements: database.requirements(authorization),
@@ -32,7 +34,8 @@ const server = createServer((request, response) => {
     database.requirements(authorization),
     database.market(authorization),
     database.contracts(authorization),
-    database.workspaces(authorization)
+    database.workspaces(authorization),
+    login
   );
 });
 server.on("close", () => database.close());

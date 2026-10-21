@@ -544,7 +544,8 @@ test("editor exposes all structured fields, private defaults, summary confirmati
     assert.ok(html.includes(label));
   assert.match(html, /id="confirmation" hidden/);
   assert.doesNotMatch(html, / checked/);
-  assert.match(html, /type="password" autocomplete="off"/);
+  assert.match(html, /href="\/console"/);
+  assert.doesNotMatch(html, /id="session"/);
   assert.match(html, /aria-live="polite"/);
 });
 
@@ -609,11 +610,15 @@ test("editor saves, reloads and publishes through HTTP; editing invalidates visi
   const requests: string[] = [];
   let attachmentResponse: Promise<void> | undefined;
   globalThis.fetch = (async (url: string, options: RequestInit) => {
+    if (url === "/api/auth/me")
+      return {
+        ok: true,
+        json: async () => ({ data: { csrf: "synthetic-csrf" } })
+      } as Response;
     requests.push(url);
-    const headers = options.headers as Record<string, string>;
     const result = await request(
       f.service,
-      headers.Authorization!.slice(7),
+      elements.get("session")!.value,
       url.replace("/api/requirements", ""),
       options.method,
       options.body ? String(options.body) : undefined

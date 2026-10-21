@@ -137,7 +137,7 @@ export function renderConsole(options: {
         .join("")}</nav>`
     : "";
   const content = !session
-    ? `<section class="panel"><h2>登录后进入交付控制台</h2><p>当前未登录。身份接入完成后，可查看组织授权的需求与交付记录。</p><a href="/preview">查看应用壳演示</a></section>`
+    ? `<section class="panel"><h2>登录后进入交付控制台</h2><p>当前未登录。登录后可查看已授权的需求与交付记录。</p><a href="/login">登录</a><a href="/preview">查看应用壳演示</a></section>`
     : statePanel(state, base);
   const safeContent =
     session &&

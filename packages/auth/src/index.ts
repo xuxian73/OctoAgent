@@ -73,7 +73,7 @@ export class Authorization {
   ) {}
 
   // Trusted server-side provisioning boundary, never exposed as a login endpoint.
-  // A future identity provider must verify the user before calling this method.
+  // The local login service verifies the password before calling this method.
   issueUserSession(userId: string, ttlMs = 60 * 60 * 1000): string {
     if (!this.store.user(userId)) return deny();
     return this.issue(userId, null, [], ttlMs, 8 * 60 * 60 * 1000);
@@ -259,6 +259,7 @@ export class Authorization {
 // Inspect raw headers: Node may discard duplicate Authorization headers.
 // Request IDs and caller-supplied user/role headers never establish identity.
 export function bearerToken(request: IncomingMessage): string {
+  if (sessionCookie(request) !== undefined) return deny();
   const values: string[] = [];
   const raw = request.rawHeaders || [];
   for (let i = 0; i < raw.length; i += 2) {
@@ -276,5 +277,39 @@ export function authorizeRequest(
   scope: Scope,
   roles?: readonly Role[]
 ): ReturnType<Authorization["authorize"]> {
-  return auth.authorize(bearerToken(request), scope, roles);
+  return auth.authorize(webToken(request), scope, roles);
+}
+
+export const SESSION_COOKIE = "octo_session";
+export function sessionCookie(request: IncomingMessage): string | undefined {
+  const values: string[] = [];
+  const raw = request.rawHeaders || [];
+  for (let i = 0; i < raw.length; i += 2) {
+    if (raw[i]?.toLowerCase() !== "cookie") continue;
+    for (const part of (raw[i + 1] || "").split(";")) {
+      const [name, ...value] = part.trim().split("=");
+      if (name === SESSION_COOKIE) values.push(value.join("="));
+    }
+  }
+  if (values.length > 1) return deny();
+  return values[0];
+}
+export const csrfToken = (token: string): string =>
+  tokenDigest("csrf:" + token);
+export function webToken(request: IncomingMessage): string {
+  const cookie = sessionCookie(request);
+  if (cookie === undefined) return bearerToken(request);
+  if (
+    (request.rawHeaders || []).some(
+      (v, i) => i % 2 === 0 && v.toLowerCase() === "authorization"
+    )
+  )
+    return deny();
+  if (!/^[A-Za-z0-9_-]{43}$/.test(cookie)) return deny();
+  if (
+    !["GET", "HEAD", "OPTIONS"].includes(request.method || "") &&
+    request.headers["x-csrf-token"] !== csrfToken(cookie)
+  )
+    return deny();
+  return cookie;
 }

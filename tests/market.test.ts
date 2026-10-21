@@ -572,7 +572,7 @@ test("comparison renders separate columns, evidence and permission rows as text"
     "answer-question"
   ])
     assert.ok(html.includes(`id="${id}"`));
-  assert.match(html, /type="password"/);
+  assert.doesNotMatch(html, /id="session"/);
 });
 
 test("market browser controls submit a confirmed bid and render two comparison columns through HTTP", async () => {
@@ -642,11 +642,15 @@ test("market browser controls submit a confirmed bid and render two comparison c
   const original = globalThis.fetch;
   const urls: string[] = [];
   globalThis.fetch = (async (url: string, options: RequestInit) => {
+    if (url === "/api/auth/me")
+      return {
+        ok: true,
+        json: async () => ({ data: { csrf: "synthetic-csrf" } })
+      } as Response;
     urls.push(url);
-    const headers = options.headers as Record<string, string>;
     const response = await request(
       f.market,
-      headers.Authorization!.slice(7),
+      elements.get("session")!.value,
       url.replace("/api/market", ""),
       options.body ? JSON.parse(String(options.body)) : undefined
     );

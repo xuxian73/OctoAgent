@@ -157,7 +157,8 @@ export async function runScenario(db: DatabaseSync): Promise<Report> {
       const page = await localRequest(services, "", path!);
       assert.equal(page.status, 200);
       assert.ok(page.text.includes(expected!));
-      assert.ok(page.text.includes('type="password"'));
+      assert.ok(page.text.includes('href="/console"'));
+      assert.ok(!page.text.includes('id="session"'));
     }
     const buy = await connect(buyerAgent),
       sell = await connect(sellerAgent),

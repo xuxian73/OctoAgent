@@ -635,10 +635,12 @@ test("browser console loads versions and submits human confirmation through HTTP
   const f = setup();
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async (url: string, options: RequestInit) => {
-    const token = (options.headers as Record<
-      string,
-      string
-    >).Authorization!.slice(7);
+    if (url === "/api/auth/me")
+      return {
+        ok: true,
+        json: async () => ({ data: { csrf: "synthetic-csrf" } })
+      } as Response;
+    const token = elements.get("session")!.value;
     assert.ok(!url.includes(token));
     const result = await request(
       f.contracts,
@@ -673,7 +675,7 @@ test("browser console loads versions and submits human confirmation through HTTP
       "pending_confirmation"
     );
     elements.get("session")!.value = f.seller;
-    elements.get("session")!.dispatchEvent(new Event("input"));
+    elements.get("contract")!.dispatchEvent(new Event("input"));
     assert.equal(elements.get("snapshot")!.textContent, "");
     await click("load");
     elements.get("confirmed")!.checked = true;

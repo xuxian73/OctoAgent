@@ -16,7 +16,7 @@ npm run dev
 
 访问 http://localhost:3000；`GET /api/health`返回 JSON 存活状态（不表示数据库就绪）。`npm run dev`先编译，再启动服务，不会自动监视文件变化；修改 TypeScript 后，按 Ctrl+C 停止服务并重新运行`npm run dev`，然后手动刷新浏览器。即使另开终端运行`npm exec -- tsc --watch`，服务端改动也需要手动重启服务才能生效。`npm run build && npm start` 可运行编译后的应用。所有命令从仓库根目录执行。
 
-`.env` 只由启动/迁移命令读取，已被 Git 和 Docker 忽略。`DATABASE_URL` 为本地 SQLite 文件地址；`HOST`/`PORT` 为监听地址；`APP_URL` 预留为后续绝对 URL 的来源；`SESSION_SECRET` 仅预留，当前无会话功能，不要求填写。后续身份功能必须校验该密钥并仅在服务端使用。不要把真实凭据或个人数据加入测试、代码和日志。
+`.env` 只由启动/迁移命令读取，已被 Git 和 Docker 忽略。`DATABASE_URL` 为本地 SQLite 文件地址；`HOST`/`PORT` 为监听地址；`APP_URL` 预留为后续绝对 URL 的来源；`NODE_ENV=production` 强制浏览器会话 Cookie 使用 Secure，生产入口必须通过 HTTPS。会话使用安全随机数，不需要共享 SESSION_SECRET。不要把真实凭据或个人数据加入测试、代码和日志。
 
 ## 技术栈与目录
 
@@ -64,11 +64,11 @@ API 使用 `ApiResult<T>` 判别联合：成功为 `{ ok: true, data, request_id
 
 ## 应用壳与状态演示（Issue #2）
 
-访问 `/` 或 `/console` 呈现未登录提示；当前尚未接入认证。访问 `/preview` 可查看**公开、合成数据**的登录后布局，包含需求、报价、合同、工作区和验收入口，入口仅展示占位页，不执行业务动作。演示身份不会存储为会话，也不会授权任何 API。页面底部可切换加载、失败、权限不足、404、空数据和表单错误；表单仅在本地检查必填项，不保存内容。
+访问 `/login` 登录本地账号，`/` 或 `/console` 根据真实 Cookie 会话显示业务入口或登录提示。访问 `/preview` 可查看**公开、合成数据**的登录后布局，包含需求、报价、合同、工作区和验收入口，入口仅展示占位页，不执行业务动作。演示身份不会存储为会话，也不会授权任何 API。页面底部可切换加载、失败、权限不足、404、空数据和表单错误；表单仅在本地检查必填项，不保存内容。
 
 `apps/web/tokens.css` 集中定义品牌颜色、字体、间距和形状；`app.css` 使用这些 tokens，并在 760px 以下改为单栏和两列关键操作。`src/shell.ts` 提供 Logo、状态页、Agent 动作摘要与服务端 HTML 渲染，输入组织名称和动作内容均转义。`src/main.ts` 只负责重试和演示表单交互。导航使用原生链接，表单支持键盘提交，提供跳转主内容链接、焦点样式及语义标签。
 
-真实身份接入时，应由服务端提供 `Session`（组织上下文与权限），不得使用演示路由、URL 参数或浏览器存储作为身份依据。渲染器会过滤未授权入口和正文，但这不是业务授权层；后续每个业务 API 仍须独立验证会话、组织和对象权限。需求业务入口与接口见下方 Issue #4 说明。
+真实控制台入口由服务端验证 Cookie，业务数据继续按组织、项目与资源权限校验；不得使用演示路由、URL 参数或浏览器存储作为身份依据。渲染器会过滤未授权入口和正文，但这不是业务授权层；后续每个业务 API 仍须独立验证会话、组织和对象权限。需求业务入口与接口见下方 Issue #4 说明。
 
 离线测试覆盖 HTML 渲染、权限上下文、状态隔离、HTML 转义、导航路由、原生事件处理和响应式样式约束；不依赖浏览器下载或外部服务。
 
@@ -86,7 +86,7 @@ API 使用 `ApiResult<T>` 判别联合：成功为 `{ ok: true, data, request_id
 
 Agent 还必须满足 token scope，不能执行 delegate。scope 结构为 `{ kind, resourceId, action }`，无通配符或父资源继承；默认空 scope，不能读取私有仓库、密钥、生产环境或其他合同。服务端调用方可以通过 `authorizeRequest(auth, request, scope, roles)` 或 `auth.authorize(token, scope, roles)` 进一步限制允许的角色。scope 必须由服务端路由/工具定义，不得直接采用客户端声称的所需权限。不可逆动作的人类确认仍由后续业务层实现，write grant 本身不替代确认。
 
-`Authorization.issueUserSession` 仅供可信服务端在验证用户身份后调用，不是公开登录接口；当前无密码/OAuth 登录，也不会自动装载测试用户。`issueAgentToken` 只允许责任主体持有效用户会话签发，签发者必须同时持有目标动作及 delegate grant。Agent 凭据默认且最长 15 分钟，用户会话默认 1 小时、最长 8 小时。凭据用安全随机数生成，只在签发返回值中提供原文，数据库仅保存 SHA-256 摘要。每次请求重新读取过期、撤销、责任主体和当前权限，不缓存成功身份。`revoke(session, tokenDigest)` 持久化撤销；撤销者须是责任主体或平台管理员。可注入审计回调只接收事件类型和 token 摘要，不接收原始凭据。不可篡改审计存储属于后续审计 issue。
+`Authorization.issueUserSession` 仅供可信服务端在验证用户身份后调用，不是公开登录接口；本地密码登录在验证密码后调用此接口，不提供 OAuth，也不会自动装载测试用户。`issueAgentToken` 只允许责任主体持有效用户会话签发，签发者必须同时持有目标动作及 delegate grant。Agent 凭据默认且最长 15 分钟，用户会话默认 1 小时、最长 8 小时。凭据用安全随机数生成，只在签发返回值中提供原文，数据库仅保存 SHA-256 摘要。每次请求重新读取过期、撤销、责任主体和当前权限，不缓存成功身份。`revoke(session, tokenDigest)` 持久化撤销；撤销者须是责任主体或平台管理员。可注入审计回调只接收事件类型和 token 摘要，不接收原始凭据。不可篡改审计存储属于后续审计 issue。
 
 `GET /api/access/{kind}/{id}` 是只读的授权元数据接口，用于验证接入；允许的 kind 为 organization/project/contract/workspace/repository/secret/production。要求且仅允许一个 `Authorization: Bearer …` 请求头，成功返回身份、资源引用及角色，不返回业务内容。不存在、越权、缺凭据、过期和撤销均返回相同的 403 `FORBIDDEN / 无权访问`。响应禁止缓存；客户端 request ID、用户和角色头不作为身份依据。重复读取允许，但每次重新鉴权并生成新的服务端 request ID；写操作幂等和回调重放防护留给对应业务与审计 issue。公开 preview 仍只使用合成数据。
 
@@ -94,7 +94,7 @@ Agent 还必须满足 token scope，不能执行 delegate。scope 结构为 `{ k
 
 ## 需求草稿与发布（Issue #4）
 
-访问 `/requirements` 使用结构化表单创建、保存和按 ID 加载草稿。复用 Issue #3 的可信会话签发边界：输入已签发的甲方会话和明确授权的项目 ID；本 issue 不增加登录提供商或自动创建身份。凭据不写浏览器存储、URL、日志或测试种子。所有数据请求由服务端重新验证甲方角色、组织/项目成员关系及项目 read/write grant。Agent 可以在授权范围内编辑草稿，但不能取得发布确认或发布。
+访问 `/requirements` 使用结构化表单创建、保存和按 ID 加载草稿。先在 `/login` 登录，再输入明确授权的项目 ID；浏览器自动发送 HttpOnly Cookie，并从当前身份接口获取仅存内存的 CSRF 校验值。凭据不写浏览器存储、URL、日志或测试种子。所有数据请求由服务端重新验证甲方角色、组织/项目成员关系及项目 read/write grant。Agent 可以在授权范围内编辑草稿，但不能取得发布确认或发布。
 
 表单覆盖 8 种任务类型、3 种预算方式，唯一结算币种为 CNY；按小时金额表示时薪，按里程碑填写总额及里程碑分配说明。草稿允许缺失，保存后返回缺失字段和风险提示；发布要求全部字段完整、金额有效。没有仓库、权限等情况请明确填写“无”。里程碑分配和验收条款目前为文本，由甲方在摘要中审核。
 
@@ -173,3 +173,19 @@ npm run test:e2e
 重复运行会读取同一完成记录并重新导出证据，不增加用户、需求、合同、提交或审计事件。种子写入与完成记录使用同一事务，失败整体回滚，可再次执行。已有非演示用户的数据库会被拒绝。需要全新演示时指定一个新的空目录；演示使用注入时钟验证过期，不等待真实时间。
 
 `tests/e2e.test.ts` 使用临时目录，结束后清理；HTTP 请求直接经过应用 dispatcher/解析器，MCP 使用 SDK 内存传输，不监听端口或访问网络。测试验证关键页面、草稿缺失提示、每个业务状态、人工确认、只读与写入 scope、交付动作分别授权、跨租户隐藏、验收前无结算/生产变更，以及争议后的冻结。它是离线应用集成验收，不是浏览器自动化或真实 GitHub 检查。`./scripts/check.sh` 自动包含此测试，CI 无需新增服务或网络资源。
+
+## 本地账号与浏览器登录（Issue #21）
+
+部署者先执行 `npm run db:migrate`，然后在服务器终端离线建号（示例名称仅为占位）：
+
+```sh
+python3 -c 'import getpass; print(getpass.getpass("Password: "))' | npm run account:create -- account-name user-id
+```
+
+命令从标准输入读取密码，不接受命令行密码或环境变量密码；输入不回显，也不进入 shell 历史。账号名为 1–64 位字母、数字、下划线、点或连字符，密码为 12–256 个字符。数据库专用认证表仅保存随机盐和 scrypt 散列（N=32768、r=8、p=1，64 字节）；不会修改已有密码。用户 ID 可绑定已有身份，也可新建普通成员；建号不会赋予任何组织成员关系或资源权限。按现有部署流程单独配置授权，无开放注册接口。
+
+`POST /api/auth/login` 接受 JSON，并要求 `X-Octo-Login: 1`；登录页自动完成。`GET /api/auth/me` 返回当前用户与 CSRF 值，不返回会话原文。`POST /api/auth/logout` 撤销当前会话并清除 Cookie。Cookie 为 HttpOnly、SameSite=Strict、Path=/ 的浏览器会话 Cookie（不设置持久化有效期），服务端会话 1 小时过期；生产设置 `NODE_ENV=production` 并通过 HTTPS 提供服务。不得在代理访问日志中记录请求体、Authorization 或 Cookie。
+
+Cookie 写请求必须带当前身份接口提供的 `X-CSRF-Token`；该值与会话绑定，只存在页面内存。Web API 仍兼容原有 Bearer 客户端，MCP 仅接受 Bearer；同时提供会话 Cookie 与 Authorization、重复会话 Cookie 或重复 Authorization 会被拒绝。登录不启用 CORS，跨站登录请求被拒绝。
+
+登录每个 TCP 来源地址每分钟最多 5 次尝试（包含成功），最多保留 1024 个来源窗口，最多并发 4 个验证请求，超限返回 429；不信任转发 IP 头。此限流适用于当前单进程部署，重启会重置，多实例或反向代理部署应在入口额外配置共享限流。审计仅记录登录结果、请求 ID，以及现有会话签发/撤销摘要，不记录输入账号、密码、Cookie 或 CSRF 原文。

@@ -178,18 +178,16 @@ test("workspace page loads seeded API evidence and clears it on tenant switch", 
           "context"
         ].map(id => [id, new Element()])
       );
-      t.mock.method(
-        globalThis,
-        "fetch",
-        async (url: string, init: RequestInit) => {
-          const token = (init.headers as Record<
-            string,
-            string
-          >).Authorization!.slice(7);
-          const result = await localRequest(services, token, url);
-          return { json: async () => JSON.parse(result.text) };
-        }
-      );
+      t.mock.method(globalThis, "fetch", async (url: string) => {
+        if (url === "/api/auth/me")
+          return {
+            ok: true,
+            json: async () => ({ data: { csrf: "synthetic-csrf" } })
+          };
+        const token = elements.session!.value;
+        const result = await localRequest(services, token, url);
+        return { json: async () => JSON.parse(result.text) };
+      });
       mountWorkspaces(({
         getElementById: (id: string) => elements[id]
       } as unknown) as Document);
@@ -209,7 +207,7 @@ test("workspace page loads seeded API evidence and clears it on tenant switch", 
           0
       );
       elements.session!.value = auth.issueUserSession("other-buyer");
-      elements.session!.dispatchEvent(new Event("input"));
+      elements.contract!.dispatchEvent(new Event("input"));
       assert.equal(elements.commits!.textContent, "");
       assert.equal(elements.artifacts!.textContent, "");
       await load();

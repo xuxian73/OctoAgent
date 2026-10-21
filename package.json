@@ -23,7 +23,8 @@
     "test": "node --test dist/tests/*.test.js",
     "check": "bash scripts/check.sh",
     "demo:seed": "npm run build && node dist/packages/demo/src/main.js",
-    "test:e2e": "npm run build && node --test dist/tests/e2e.test.js"
+    "test:e2e": "npm run build && node --test dist/tests/e2e.test.js",
+    "account:create": "node --env-file-if-exists=.env dist/packages/database/src/create-account.js"
   },
   "devDependencies": {
     "@types/node": "22.19.21",
