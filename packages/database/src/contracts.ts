@@ -213,6 +213,11 @@ export class Contracts {
       return this.read(token, id);
     });
   }
+  inspect(token: string, id: string, write = false, role?: "buyer" | "seller") {
+    const context = this.access(token, id, write);
+    if (role && context.party !== role) throw new ForbiddenError();
+    return this.read(token, id);
+  }
   read(token: string, id: string) {
     const { row } = this.access(token, id);
     return {

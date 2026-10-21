@@ -14,13 +14,18 @@ export class Market {
     private now = Date.now
   ) {}
   private transaction<T>(fn: () => T): T {
-    this.db.exec("BEGIN IMMEDIATE");
+    const nested = this.db.isTransaction;
+    this.db.exec(nested ? "SAVEPOINT market_operation" : "BEGIN IMMEDIATE");
     try {
       const result = fn();
-      this.db.exec("COMMIT");
+      this.db.exec(nested ? "RELEASE market_operation" : "COMMIT");
       return result;
     } catch (e) {
-      this.db.exec("ROLLBACK");
+      this.db.exec(
+        nested
+          ? "ROLLBACK TO market_operation; RELEASE market_operation"
+          : "ROLLBACK"
+      );
       throw e;
     }
   }
@@ -61,6 +66,37 @@ export class Market {
   private open(deadline: number) {
     if (deadline <= this.now())
       throw new RequirementError("BIDDING_CLOSED", 409);
+  }
+  inspectTask(
+    token: string,
+    id: string,
+    write = false,
+    role?: "buyer" | "seller"
+  ) {
+    const context = this.task(token, id, write, role);
+    return {
+      projectId: String(context.row.project_id),
+      role: context.access.role,
+      detail: this.detail(token, id)
+    };
+  }
+  inspectBid(token: string, id: string, role: "buyer" | "seller") {
+    const context = this.bidAccess(token, id, true);
+    if (context.access.role !== role) throw new ForbiddenError();
+    return this.bid(token, id);
+  }
+  clarify(token: string, id: string, topic: string, text: string) {
+    const { access } = this.task(token, id, true, "seller");
+    return this.event(
+      id,
+      access.identity.id,
+      access.identity.responsibleUserId,
+      "clarification",
+      {
+        topic: this.text(topic),
+        text: this.text(text)
+      }
+    );
   }
   search(token: string, project: string, filters: Record<string, string> = {}) {
     this.auth.authorize(
