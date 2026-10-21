@@ -37,7 +37,7 @@ export function renderApplication(
     )
     .join(
       ""
-    )}</nav><p>仅显示当前项目获准使用的入口；业务操作仍独立校验权限。</p></aside>`;
+    )}<a href="/agents">我的 Agent</a></nav><p>仅显示当前项目获准使用的入口；业务操作仍独立校验权限。</p></aside>`;
   return html
     .replace("<body>", "<body>" + header)
     .replace(

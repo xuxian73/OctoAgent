@@ -1,3 +1,6 @@
+import { Agents } from "../../../packages/database/src/agents.js";
+import { agentRoute } from "./agents.js";
+import { renderAgents } from "../../web/src/agents.js";
 import {
   renderApplication,
   emptyApplication,
@@ -57,7 +60,8 @@ export function handleRequest(
   contracts?: Contracts,
   workspaces?: Workspaces,
   login?: Login,
-  onboarding?: Onboarding
+  onboarding?: Onboarding,
+  agents?: Agents
 ): void {
   const requestId = randomUUID();
   response.setHeader("X-Request-Id", requestId);
@@ -90,6 +94,10 @@ export function handleRequest(
         authorization.identity(webToken(request)).kind !== "user")
     )
       throw new ForbiddenError();
+    if (path === "/api/agents" || path.startsWith("/api/agents/")) {
+      void agentRoute(request, response, requestId, agents);
+      return;
+    }
     const page = path.slice(1);
     if (
       request.method === "GET" &&
@@ -97,7 +105,8 @@ export function handleRequest(
         path === "/" ||
         path === "/console" ||
         path.startsWith("/console/") ||
-        path === "/onboarding")
+        path === "/onboarding" ||
+        path === "/agents")
     ) {
       try {
         if (
@@ -113,8 +122,12 @@ export function handleRequest(
       }
       const context = onboarding?.list(webToken(request));
       response.setHeader("Content-Type", "text/html; charset=utf-8");
-      if (path === "/onboarding") {
+      if (path === "/onboarding" || path === "/agents") {
         response.end(renderOnboarding());
+        return;
+      }
+      if (path === "/agents") {
+        response.end(renderApplication(renderAgents(), "agents", []));
         return;
       }
       if (context?.canInitialize) {
@@ -258,6 +271,10 @@ export function handleRequest(
       return;
     }
     const assets: Record<string, [string, string]> = {
+      "/agents.js": [
+        "dist/apps/web/src/agents.js",
+        "text/javascript; charset=utf-8"
+      ],
       "/client.js": [
         "dist/apps/web/src/client.js",
         "text/javascript; charset=utf-8"
