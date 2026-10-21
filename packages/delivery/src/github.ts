@@ -23,7 +23,16 @@ export interface RepositoryState {
   }[];
   checks: { sha: string; kind: string; passed: boolean; log: string }[];
   pullRequests: { sha: string; url: string; summary: string }[];
-  artifacts: { sha: string; name: string; checksum: string; size: number }[];
+  artifacts: {
+    sha: string;
+    name: string;
+    checksum: string;
+    size: number;
+    fileId?: string;
+    simulated?: boolean;
+    hasBytes?: boolean;
+    milestoneId?: string;
+  }[];
   discussions: string[];
   risks: string[];
   deployments: unknown[];
@@ -191,7 +200,9 @@ export class FakeGitHubProvider implements GitHubProvider {
       sha,
       name,
       checksum: digest,
-      size: Buffer.byteLength(content)
+      size: Buffer.byteLength(content),
+      simulated: true,
+      hasBytes: false
     };
     state.artifacts.push(artifact);
     return artifact;

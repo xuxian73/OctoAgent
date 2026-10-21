@@ -1,3 +1,4 @@
+import { Files } from "./files.js";
 import { audited } from "./security.js";
 import { DatabaseSync } from "node:sqlite";
 import { Authorization, ForbiddenError } from "../../auth/src/index.js";
@@ -224,7 +225,33 @@ export class Workspaces {
         );
       else if (action === "create_pull_request")
         result = this.provider.createPullRequest(state, text(input.sha));
-      else if (action === "upload_artifact")
+      else if (action === "upload_artifact" && input.fileId) {
+        const fileId = text(input.fileId);
+        const { metadata: file } = new Files(this.db, this.auth).download(
+          token,
+          fileId
+        );
+        if (
+          file.kind !== "artifact" ||
+          file.resource_id !== id ||
+          file.version !== contract.version ||
+          file.sha !== input.sha ||
+          file.milestone_id !== input.milestoneId
+        )
+          throw new RequirementError("ARTIFACT_BINDING_MISMATCH", 409);
+        const artifact = {
+          fileId,
+          sha: String(file.sha),
+          name: String(file.name),
+          checksum: String(file.checksum),
+          size: Number(file.size),
+          milestoneId: String(file.milestone_id),
+          simulated: Boolean(file.simulated),
+          hasBytes: true
+        };
+        state.artifacts.push(artifact);
+        result = artifact;
+      } else if (action === "upload_artifact")
         result = this.provider.uploadArtifact(
           state,
           text(input.sha),
@@ -256,6 +283,22 @@ export class Workspaces {
         )
           throw new RequirementError("EVIDENCE_INCOMPLETE", 409);
         const milestoneId = text(input.milestoneId);
+        for (const artifact of state.artifacts.filter(
+          a => a.sha === sha && a.fileId
+        )) {
+          const file = new Files(this.db, this.auth).download(
+            token,
+            artifact.fileId!
+          ).metadata;
+          if (
+            file.resource_id !== id ||
+            file.version !== contract.version ||
+            file.milestone_id !== milestoneId ||
+            file.sha !== sha
+          )
+            throw new RequirementError("ARTIFACT_BINDING_MISMATCH", 409);
+        }
+
         const milestone = contract.milestones.find(
           m => m.id === milestoneId && m.version === contract.version
         );
@@ -280,6 +323,9 @@ export class Workspaces {
             throw new RequirementError("INVALID_PREVIEW_URL");
         }
         result = {
+          simulated: state.artifacts
+            .filter(a => a.sha === sha)
+            .some(a => !a.fileId || a.simulated),
           milestoneId,
           sha,
           version: contract.version,

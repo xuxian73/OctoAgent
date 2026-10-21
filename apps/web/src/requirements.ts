@@ -1,3 +1,4 @@
+import { renderFiles, mountFiles } from "./files.js";
 import { apiRequest } from "./client.js";
 import {
   fields,
@@ -33,7 +34,7 @@ export function renderRequirementEditor() {
     fields
   ).join(
     "、"
-  )}。保存草稿后可查看逐项校验结果。</p><section id="confirmation" hidden><h2>发布前确认</h2><div id="summary"></div><label><input id="confirmed" type="checkbox">我已确认范围、预算、交付物、验收标准及公开字段</label><button id="publish" type="button">确认发布此版本</button></section><section><h2>版本变更记录</h2><ul id="changes"></ul></section><section><h2>附件元数据</h2><p>仅登记元数据，不上传文件内容。支持 PDF、TXT、PNG、JPG，最大 10 MiB。</p><input id="attachment" type="file" accept=".pdf,.txt,.png,.jpg" aria-label="选择附件"><label><input id="attachment-public" type="checkbox">允许公开附件名称及元数据</label><button id="add-attachment" type="button">保存附件元数据</button><ul id="attachments"></ul></section></main><script type="module" src="/requirements.js"></script></body></html>`;
+  )}。保存草稿后可查看逐项校验结果。</p><section id="confirmation" hidden><h2>发布前确认</h2><div id="summary"></div><label><input id="confirmed" type="checkbox">我已确认范围、预算、交付物、验收标准及公开字段</label><button id="publish" type="button">确认发布此版本</button></section><section><h2>版本变更记录</h2><ul id="changes"></ul></section><section><h2>附件元数据</h2><p>仅登记元数据，不上传文件内容。支持 PDF、TXT、PNG、JPG，最大 10 MiB。</p><input id="attachment" type="file" accept=".pdf,.txt,.png,.jpg" aria-label="选择附件"><label><input id="attachment-public" type="checkbox">允许公开附件名称及元数据</label><button id="add-attachment" type="button">保存附件元数据</button><ul id="attachments"></ul></section>${renderFiles()}</main><script type="module" src="/requirements.js"></script></body></html>`;
 }
 export function mountRequirementEditor(root: Document) {
   const form = root.querySelector<HTMLFormElement>("#requirement-form");
@@ -102,6 +103,8 @@ export function mountRequirementEditor(root: Document) {
       input("market-agents").checked = market?.allowAgents || false;
     }
     revision = data.revision;
+    const fileSection = root.getElementById("private-files");
+    if (fileSection) fileSection.dataset.version = String(data.version);
     input("draft-id").value = data.id;
     for (const key of Object.keys(fields) as Field[])
       input(key).value = data.draft.values[key] || "";
@@ -140,7 +143,7 @@ export function mountRequirementEditor(root: Document) {
       const li = root.createElement("li");
       li.textContent = `${item.name}（${
         item.private ? "私密" : "公开元数据"
-      }）`;
+      }；仅元数据，无实际字节，不可下载）`;
       list.append(li);
     }
   }
@@ -237,6 +240,14 @@ export function mountRequirementEditor(root: Document) {
       invalidate();
     })
   );
+  mountFiles(root, () => ({
+    kind: "requirement",
+    resourceId: input("draft-id").value,
+    version: Number(root.getElementById("private-files")!.dataset.version || 0),
+    revision,
+    milestoneId: "",
+    sha: ""
+  }));
   input("add-attachment").addEventListener("click", () =>
     run(async () => {
       if (!revision) throw new Error("请先保存或加载草稿");

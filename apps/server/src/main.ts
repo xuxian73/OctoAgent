@@ -13,6 +13,13 @@ const database = openDatabase(
   process.env.DATABASE_URL || "file:./.data/octoagent.sqlite"
 );
 const authorization = new Authorization(database.identities);
+const files = database.files(authorization, {
+  maxBytes: Number(process.env.FILE_MAX_BYTES || 10485760),
+  maxCount: Number(process.env.FILE_MAX_COUNT || 20),
+  extensions: (process.env.FILE_EXTENSIONS || ".ts,.json,.md,.txt,.zip").split(
+    ","
+  )
+});
 const login = new Login(database.accounts, authorization);
 const mcp = new MarketplaceMcp({
   auth: authorization,
@@ -38,7 +45,8 @@ const server = createServer((request, response) => {
     login,
     database.onboarding(authorization),
     database.disputes(authorization),
-    database.agents(authorization)
+    database.agents(authorization),
+    files
   );
 });
 server.on("close", () => database.close());
