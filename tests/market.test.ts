@@ -92,6 +92,160 @@ const offer: Proposal = {
   capabilities: ["TypeScript", "testing"]
 };
 
+test("recipient notifications paginate, persist reads and recheck revoked access", async () => {
+  const f = fixture();
+  try {
+    const id = f.publish();
+    f.submit(f.seller, id);
+    const draft = {
+      ...f.draft,
+      values: { ...f.draft.values, goal: "新版目标" }
+    };
+    f.req.save(f.buyer, id, f.req.read(f.buyer, id).revision, draft);
+    assert.deepEqual(f.market.notifications(f.seller).items, []);
+    const proof = f.req.preview(f.buyer, id).confirmation;
+    f.req.publish(f.buyer, id, proof, true);
+    assert.throws(() => f.req.publish(f.buyer, id, proof, true));
+    assert.equal(f.market.notifications(f.seller).items.length, 1);
+    assert.deepEqual(f.market.notifications(f.second).items, []);
+    f.submit(f.second, id);
+    f.req.publish(f.buyer, id, f.req.preview(f.buyer, id).confirmation, true);
+    const first = await request(f.market, f.seller, "/notifications?limit=1");
+    assert.equal(first.status, 200);
+    assert.equal(first.body.data.items[0].version, 2);
+    assert.equal(
+      first.body.data.items[0].href,
+      `/market?project=project-a&task=${id}`
+    );
+    const second = f.market.notifications(
+      f.seller,
+      first.body.data.nextCursor,
+      1
+    );
+    assert.equal(second.items[0]!.version, 3);
+    assert.equal(second.nextCursor, null);
+    assert.equal(
+      (await request(f.market, f.seller, "/notifications?limit=0")).status,
+      400
+    );
+    assert.throws(() => f.market.notifications(f.seller, -1));
+    const marked = await request(
+      f.market,
+      f.seller,
+      `/notifications/${id}/3/read`,
+      {}
+    );
+    assert.equal(marked.status, 200);
+    const count = () =>
+      f.db
+        .prepare(
+          "SELECT count(*) n FROM audit_events WHERE event = 'Market.readNotification'"
+        )
+        .get()!.n;
+    assert.equal(count(), 1);
+    f.advance(100);
+    assert.deepEqual(
+      (await request(f.market, f.seller, `/notifications/${id}/3/read`, {}))
+        .body.data,
+      marked.body.data
+    );
+    assert.equal(count(), 1);
+    const reopened = new Market(f.db, f.auth);
+    assert.equal(
+      reopened.notifications(f.seller).items[1]!.readAt,
+      marked.body.data.readAt
+    );
+    assert.equal(reopened.notifications(f.second).items[0]!.readAt, null);
+    const outsider = f.auth.issueUserSession("outsider");
+    // Even an old recipient record cannot bypass current tenant authorization.
+    f.db
+      .prepare(
+        "INSERT INTO requirement_notifications VALUES (?, 3, 'outsider', 'requirement_changed')"
+      )
+      .run(id);
+    assert.deepEqual(f.market.notifications(outsider).items, []);
+    const agent = f.auth.issueAgentToken(f.seller, "agent-a", [
+      { kind: "project", resourceId: "project-a", action: "read" }
+    ]);
+    assert.throws(() => f.market.notifications(agent), ForbiddenError);
+    const denied = await request(
+      f.market,
+      outsider,
+      `/notifications/${id}/3/read`,
+      {}
+    );
+    const missing = await request(
+      f.market,
+      outsider,
+      "/notifications/missing/3/read",
+      {}
+    );
+    assert.deepEqual(denied, missing);
+    f.db.exec(
+      "DELETE FROM resource_grants WHERE user_id = 'seller' AND resource_id = 'project-a' AND action = 'read'"
+    );
+    assert.deepEqual(f.market.notifications(f.seller), {
+      items: [],
+      nextCursor: null
+    });
+    assert.deepEqual(
+      await request(f.market, f.seller, `/notifications/${id}/3/read`, {}),
+      missing
+    );
+    assert.equal((await request(f.market, f.seller, `/${id}`)).status, 403);
+    assert.equal(count(), 1);
+  } finally {
+    f.db.close();
+  }
+});
+
+test("notification pagination skips revoked projects without exposing hidden cursors", () => {
+  const f = fixture();
+  try {
+    f.db.exec(`INSERT INTO projects VALUES ('project-revoked', 'org-a');
+      INSERT INTO authorization_resources VALUES ('project', 'project-revoked', 'org-a', 'project-revoked');
+      INSERT INTO memberships VALUES ('seller', 'org-a', 'project-revoked', 'seller');
+      INSERT INTO resource_grants VALUES ('seller', 'project', 'project-revoked', 'read');`);
+    const ids = Array.from({ length: 5 }, () => {
+      const id = f.publish();
+      f.submit(f.seller, id);
+      f.req.publish(f.buyer, id, f.req.preview(f.buyer, id).confirmation, true);
+      return id;
+    });
+    for (const index of [0, 2, 4])
+      f.db
+        .prepare(
+          "UPDATE requirements SET project_id = 'project-revoked' WHERE id = ?"
+        )
+        .run(ids[index]!);
+    assert.equal(f.market.notifications(f.seller).items.length, 5);
+    f.db.exec(
+      "DELETE FROM resource_grants WHERE resource_id = 'project-revoked'"
+    );
+    const first = f.market.notifications(f.seller, 0, 1);
+    assert.deepEqual(
+      first.items.map(item => item.requirementId),
+      [ids[1]]
+    );
+    assert.equal(first.nextCursor, first.items[0]!.cursor);
+    const second = f.market.notifications(f.seller, first.nextCursor!, 1);
+    assert.deepEqual(
+      second.items.map(item => item.requirementId),
+      [ids[3]]
+    );
+    assert.equal(second.nextCursor, null);
+    assert.deepEqual(
+      f.market.notifications(f.seller, second.items[0]!.cursor, 1),
+      {
+        items: [],
+        nextCursor: null
+      }
+    );
+  } finally {
+    f.db.close();
+  }
+});
+
 test("discovery filters only published, authorized and open snapshots; private context stays hidden", () => {
   const f = fixture();
   try {
