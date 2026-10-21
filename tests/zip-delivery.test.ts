@@ -12,13 +12,72 @@ import {
   stageZip,
   deliveryId
 } from "./fixtures/delivery.js";
-import { validateZip } from "../packages/security/src/zip.js";
+import { crc32, validateZip } from "../packages/security/src/zip.js";
 import { Files } from "../packages/database/src/files.js";
 import { Workspaces } from "../packages/database/src/workspaces.js";
 import { Authorization } from "../packages/auth/src/index.js";
 import { SqliteIdentityStore } from "../packages/database/src/identity.js";
 import { MarketplaceMcp } from "../packages/mcp/src/index.js";
 import { McpRequests } from "../packages/database/src/mcp.js";
+
+test("ZIP rejects extra-field name overrides in either header", () => {
+  const name = Buffer.from("safe.txt");
+  // Keep all offsets and lengths valid: rejection must be due to extra fields.
+  function withExtras(localExtra: Buffer, centralExtra: Buffer) {
+    const original = zip("delivery", name.toString());
+    const centralOffset = original.readUInt32LE(original.length - 6);
+    const local = Buffer.from(original.subarray(0, 30));
+    const central = Buffer.from(
+      original.subarray(centralOffset, centralOffset + 46)
+    );
+    const end = Buffer.from(original.subarray(-22));
+    local.writeUInt16LE(localExtra.length, 28);
+    central.writeUInt16LE(centralExtra.length, 30);
+    end.writeUInt32LE(46 + name.length + centralExtra.length, 12);
+    end.writeUInt32LE(centralOffset + localExtra.length, 16);
+    return Buffer.concat([
+      local,
+      name,
+      localExtra,
+      original.subarray(30 + name.length, centralOffset),
+      central,
+      name,
+      centralExtra,
+      end
+    ]);
+  }
+  const empty = Buffer.alloc(0);
+  validateZip(withExtras(empty, empty));
+  for (const override of ["../outside.txt", "/outside.txt", "safe.txt"]) {
+    const path = Buffer.from(override);
+    const field = Buffer.alloc(9 + path.length);
+    field.writeUInt16LE(0x7075, 0); // Info-ZIP Unicode Path
+    field.writeUInt16LE(5 + path.length, 2);
+    field[4] = 1;
+    field.writeUInt32LE(crc32(name), 5); // Valid checksum of the ordinary name
+    path.copy(field, 9);
+    for (const [local, central] of [
+      [field, empty],
+      [empty, field],
+      [field, field]
+    ] as const)
+      assert.throws(
+        () => validateZip(withExtras(local, central)),
+        /ZIP_UNSUPPORTED_EXTRA_FIELD/
+      );
+  }
+  // Unknown IDs and malformed/truncated fields must not bypass the subset.
+  for (const field of [Buffer.from([0xff, 0xff, 0, 0]), Buffer.from([0x75])]) {
+    assert.throws(
+      () => validateZip(withExtras(field, empty)),
+      /ZIP_UNSUPPORTED_EXTRA_FIELD/
+    );
+    assert.throws(
+      () => validateZip(withExtras(empty, field)),
+      /ZIP_UNSUPPORTED_EXTRA_FIELD/
+    );
+  }
+});
 
 test("ZIP structure, CRC, encryption, traversal, symlinks, nested limits and expansion fail closed", () => {
   validateZip(zip());

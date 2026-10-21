@@ -66,6 +66,9 @@ export function validateZip(input: Uint8Array): void {
         b.readUInt16LE(central + 34)
       )
         fail("CORRUPT");
+      // Extra fields can override names (e.g. Unicode Path) or entry semantics
+      // in other readers. This restricted subset supports none, in either header.
+      if (extra) fail("UNSUPPORTED_EXTRA_FIELD");
       const rawName = b.subarray(central + 46, central + 46 + length);
       const name = new TextDecoder("utf-8", { fatal: true }).decode(rawName);
       if (
@@ -105,6 +108,7 @@ export function validateZip(input: Uint8Array): void {
         dataStart + compressed > start
       )
         fail("CORRUPT");
+      if (localExtra) fail("UNSUPPORTED_EXTRA_FIELD");
       if (
         !(flags & 8) &&
         (b.readUInt32LE(offset + 14) !== crc ||
