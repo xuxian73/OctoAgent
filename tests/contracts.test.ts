@@ -167,6 +167,81 @@ test("selection is unique, snapshots scope, denies strangers and stale/unsubmitt
     f.db.close();
   }
 });
+test("selection preserves maximum-length source fields and all delivery evidence", async () => {
+  const f = fixture();
+  try {
+    const values = {
+      ...f.draft.values,
+      goal: "目".repeat(10000),
+      permissions: "权".repeat(10000),
+      exclusions: "除".repeat(10000),
+      deliverables: "交".repeat(10000),
+      acceptance: "验".repeat(10000)
+    };
+    const proposal = {
+      ...offer,
+      summary: "摘".repeat(10000),
+      evidence: Array.from({ length: 100 }, (_, i) =>
+        String(i).padEnd(10000, "证")
+      ),
+      milestones: ["里".repeat(10000), "程".repeat(10000)]
+    };
+    const task = f.publish({ ...f.draft, values });
+    const bid = f.submit(f.seller, task, proposal);
+    const selected = await request(f.contracts, f.buyer, "/select", {
+      bidId: bid.id,
+      confirmed: true
+    });
+    assert.equal(selected.status, 200);
+    let contract = f.contracts.read(f.buyer, selected.body.data.id);
+    const original = contract.versions[0]!;
+    assert.deepEqual(original.terms, {
+      scope: `${values.goal}\n${proposal.summary}\n权限：${values.permissions}\n范围排除：${values.exclusions}`,
+      deliverables: [values.deliverables, ...proposal.evidence].join("\n"),
+      acceptance: values.acceptance,
+      changeRules: "任一方提出范围变更，生成新版本，双方人工重新确认后生效。",
+      price: proposal.price,
+      currency: "CNY",
+      milestones: proposal.milestones
+    });
+    assert.deepEqual(f.contracts.select(f.buyer, bid.id, true), contract);
+    let sequence = 0;
+    const command = (token: string, action: string, extra = {}) => {
+      contract = f.contracts.command(token, contract.id, {
+        action,
+        requestKey: `long-${++sequence}`,
+        version: contract.version,
+        revision: contract.revision,
+        confirmed: true,
+        reason,
+        ...extra
+      });
+    };
+    command(f.buyer, "transition", { to: "pending_confirmation" });
+    command(f.buyer, "confirm");
+    command(f.seller, "confirm");
+    for (const field of ["scope", "deliverables", "acceptance"] as const) {
+      assert.throws(
+        () =>
+          command(f.buyer, "change", {
+            terms: { ...original.terms, [field]: original.terms[field] + "超" }
+          }),
+        /INVALID_TEXT/
+      );
+    }
+    command(f.seller, "change", {
+      terms: { ...original.terms, price: 200 }
+    });
+    assert.equal(contract.status, "pending_confirmation");
+    assert.deepEqual(contract.versions[0], original);
+    assert.deepEqual(contract.versions[1]!.terms, {
+      ...original.terms,
+      price: 200
+    });
+  } finally {
+    f.db.close();
+  }
+});
 test("both human parties confirm the same version concurrently; retries cannot duplicate transitions", async () => {
   const f = setup();
   try {

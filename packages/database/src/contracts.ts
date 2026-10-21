@@ -13,8 +13,11 @@ export interface Terms {
   currency: "CNY";
   milestones: string[];
 }
-function text(value: unknown): string {
-  if (typeof value !== "string" || !value.trim() || value.length > 10000)
+// Composite terms must retain every legal source field, including separators.
+const scopeLimit = 4 * 10000 + "\n\n权限：\n范围排除：".length;
+const deliverablesLimit = 10000 + 100 * (10000 + 1);
+function text(value: unknown, maxLength = 10000): string {
+  if (typeof value !== "string" || !value.trim() || value.length > maxLength)
     throw new RequirementError("INVALID_TEXT");
   return value.trim();
 }
@@ -33,13 +36,13 @@ function terms(input: unknown): Terms {
   )
     throw new RequirementError("INVALID_TERMS");
   return {
-    scope: text(t.scope),
-    deliverables: text(t.deliverables),
+    scope: text(t.scope, scopeLimit),
+    deliverables: text(t.deliverables, deliverablesLimit),
     acceptance: text(t.acceptance),
     changeRules: text(t.changeRules),
     price: t.price,
     currency: "CNY",
-    milestones: t.milestones.map(text)
+    milestones: t.milestones.map(value => text(value))
   };
 }
 const contractEdges: Record<string, readonly string[]> = {
