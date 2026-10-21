@@ -332,6 +332,11 @@ export class MarketplaceMcp {
           ) as Envelope;
         }
       );
+      // Project scope alone cannot authorize cached search results: a buyer
+      // may have disabled Agent access since the original search.
+      if (name === "search_tasks")
+        for (const task of result.data as { id: string }[])
+          this.s.market.inspectTask(token, task.id, false, "seller");
       if (result.confirmation && result.confirmation.expires_at <= this.now())
         throw new RequirementError("CONFIRMATION_EXPIRED", 409);
       if (

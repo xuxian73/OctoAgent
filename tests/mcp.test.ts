@@ -359,6 +359,64 @@ test("authorization is rechecked for replays, revoked and expired scopes; resour
   }
 });
 
+test("search replay rejects cached tasks after Agent access is disabled", () => {
+  const f = fixture();
+  try {
+    const other = f.publish();
+    const input = { request_id: "search-replay", project_id: "project-a" };
+    const first = f.call(f.sellerAgent, "search_tasks", input);
+    assert.equal(first.error, undefined);
+    assert.deepEqual(
+      (first.data as { id: string }[]).map(t => t.id).sort(),
+      [f.task, other].sort()
+    );
+    assert.deepEqual(f.call(f.sellerAgent, "search_tasks", input), first);
+
+    const task = f.req.read(f.buyer, f.task);
+    f.req.save(f.buyer, f.task, task.revision, {
+      ...task.draft,
+      market: { ...task.draft.market!, allowAgents: false }
+    });
+    f.req.publish(
+      f.buyer,
+      f.task,
+      f.req.preview(f.buyer, f.task).confirmation,
+      true
+    );
+
+    const fresh = f.call(f.sellerAgent, "search_tasks", {
+      ...input,
+      request_id: "search-fresh"
+    });
+    assert.equal(fresh.error, undefined);
+    assert.deepEqual(
+      (fresh.data as { id: string }[]).map(t => t.id),
+      [other]
+    );
+    const replay = f.call(f.sellerAgent, "search_tasks", input);
+    assert.equal(replay.request_id, input.request_id);
+    assert.equal(replay.error?.code, "FORBIDDEN");
+    assert.equal(replay.data, undefined);
+    for (const id of [f.task, "missing"]) {
+      const denied = f.call(f.sellerAgent, "get_task_context", {
+        request_id: "context-" + id,
+        task_id: id
+      });
+      assert.deepEqual({ ...denied, request_id: input.request_id }, replay);
+    }
+    const restarted = new MarketplaceMcp({
+      ...f.services,
+      requests: new McpRequests(f.db)
+    });
+    assert.deepEqual(
+      restarted.call(f.sellerAgent, "search_tasks", input),
+      replay
+    );
+  } finally {
+    f.db.close();
+  }
+});
+
 test("drafts and clarifications are atomic, persistently idempotent and reject changed requests", () => {
   const f = fixture();
   try {
