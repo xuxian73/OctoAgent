@@ -424,14 +424,18 @@ async function request(
   service: Market,
   token: string,
   path: string,
-  body?: unknown
+  body?: unknown,
+  key?: string
 ) {
   const stream = Readable.from(
     body === undefined ? [] : [JSON.stringify(body)]
   ) as IncomingMessage;
   stream.url = "/api/market" + path;
   stream.method = body === undefined ? "GET" : "POST";
-  stream.headers = { "content-type": "application/json" };
+  stream.headers = {
+    "content-type": "application/json",
+    ...(key ? { "idempotency-key": key } : {})
+  };
   stream.rawHeaders = ["Authorization", "Bearer " + token];
   let output = "";
   const response = {
@@ -698,6 +702,29 @@ test("market browser controls submit a confirmed bid and render two comparison c
       elements.get("comparison")!.children[0]!.children[0]!.children.length,
       3
     );
+    const question = f.market.clarify(f.seller, id, "验收", "请说明命令");
+    await click("detail");
+    const replyButton = elements
+      .get("context")!
+      .children.find(e => e.textContent === `回复卖方澄清 #${question}`)!;
+    replyButton.click();
+    assert.equal(elements.get("question-id")!.value, String(question));
+    elements.get("answer")!.value = "执行检查";
+    elements.get("evidence")!.value = "发布需求";
+    elements.get("impact")!.value = "不改变范围";
+    await click("answer-question");
+    assert.ok(
+      elements
+        .get("context")!
+        .children.some(e =>
+          e.textContent.includes(`回复原问题 #${question}：执行检查`)
+        )
+    );
+    assert.ok(
+      f.market
+        .timeline(f.seller, id)
+        .some(e => e.kind === "answer" && e.payload.questionId === question)
+    );
     assert.ok(
       urls.every(url => !url.includes(f.seller) && !url.includes(f.buyer))
     );
@@ -848,6 +875,141 @@ test("recipient notifications paginate, persist reads and recheck revoked access
     );
     assert.equal((await request(f.market, f.seller, `/${id}`)).status, 403);
     assert.equal(count(), 1);
+  } finally {
+    f.db.close();
+  }
+});
+
+test("buyer replies bind to private seller clarifications, with HTTP retries and authorization", async () => {
+  const f = fixture();
+  try {
+    const id = f.publish();
+    const other = f.publish();
+    f.submit(f.second, id);
+    const before = f.req.read(f.buyer, id);
+    const scopes = (["read", "write"] as const).map(action => ({
+      kind: "project" as const,
+      resourceId: "project-a",
+      action
+    }));
+    const sellerAgent = f.auth.issueAgentToken(f.seller, "agent-a", scopes);
+    f.db.exec(
+      "INSERT INTO agents VALUES ('buyer-agent', 'buyer', 'buyer', '[]')"
+    );
+    const buyerAgent = f.auth.issueAgentToken(f.buyer, "buyer-agent", scopes);
+    const readOnly = f.auth.issueAgentToken(
+      f.buyer,
+      "buyer-agent",
+      scopes.slice(0, 1)
+    );
+    const question = f.market.clarify(sellerAgent, id, "验收", "请说明命令");
+    const humanQuestion = f.market.clarify(f.seller, id, "范围", "请确认范围");
+    f.market.answer(
+      buyerAgent,
+      id,
+      humanQuestion,
+      "按发布版本",
+      "需求",
+      "不改变范围"
+    );
+    const body = {
+      questionId: question,
+      answer: "执行离线检查",
+      evidence: "需求验收标准",
+      impact: "不改变范围",
+      actor_id: "seller-two",
+      recipient: "all",
+      audience: "all",
+      values: { goal: "扩大范围" },
+      version: 99
+    };
+    for (const token of [
+      f.seller,
+      f.second,
+      readOnly,
+      f.auth.issueUserSession("outsider")
+    ])
+      assert.equal(
+        (await request(f.market, token, `/${id}/answers`, body)).status,
+        403
+      );
+    for (const questionId of [
+      f.market.clarify(f.seller, other, "主题", "问题"),
+      f.market.question(f.buyer, id, "all", "主题", "问题"),
+      999999,
+      "1"
+    ])
+      assert.equal(
+        (
+          await request(f.market, f.buyer, `/${id}/answers`, {
+            ...body,
+            questionId
+          })
+        ).status,
+        403
+      );
+    const first = await request(
+      f.market,
+      f.buyer,
+      `/${id}/answers`,
+      body,
+      "buyer-reply"
+    );
+    assert.equal(first.status, 200);
+    assert.deepEqual(
+      await request(f.market, f.buyer, `/${id}/answers`, body, "buyer-reply"),
+      first
+    );
+    assert.equal(
+      (
+        await request(
+          f.market,
+          f.buyer,
+          `/${id}/answers`,
+          { ...body, answer: "不同" },
+          "buyer-reply"
+        )
+      ).status,
+      409
+    );
+    const reply = f.market
+      .timeline(sellerAgent, id)
+      .find(e => e.sequence === first.body.data)!;
+    assert.equal(reply.actor_id, "buyer");
+    assert.deepEqual(reply.payload, {
+      questionId: question,
+      answer: body.answer,
+      evidence: body.evidence,
+      impact: body.impact
+    });
+    assert.equal(
+      f.market.timeline(f.seller, id).filter(e => e.sequence === reply.sequence)
+        .length,
+      1
+    );
+    assert.ok(
+      !f.market
+        .timeline(f.second, id)
+        .some(e =>
+          [question, humanQuestion, reply.sequence].includes(e.sequence)
+        )
+    );
+    assert.deepEqual(f.req.read(f.buyer, id), before);
+    const audit = f.db
+      .prepare(
+        "SELECT * FROM audit_events WHERE event='Market.answer' AND result='replayed'"
+      )
+      .get()!;
+    assert.equal(audit.actor_id, "user:buyer");
+    assert.equal(audit.object_id, id);
+    f.db.exec(
+      "DELETE FROM resource_grants WHERE user_id='buyer' AND action='write'"
+    );
+    assert.equal(
+      (await request(f.market, f.buyer, `/${id}/answers`, body, "buyer-reply"))
+        .status,
+      403
+    );
   } finally {
     f.db.close();
   }

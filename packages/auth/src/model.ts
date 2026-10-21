@@ -2,6 +2,7 @@ export type Role = "buyer" | "seller" | "admin";
 export type ResourceKind =
   | "organization"
   | "project"
+  | "dispute"
   | "contract"
   | "workspace"
   | "repository"
@@ -42,7 +43,7 @@ export interface IdentityStore {
   agent(id: string): Agent | undefined;
   resource(kind: ResourceKind, id: string): Resource | undefined;
   role(userId: string, resource: Resource): Role | undefined;
-  granted(userId: string, scope: Scope): boolean;
+  granted(userId: string, scope: Scope, now?: number): boolean;
   credential(digest: string): Credential | undefined;
   saveCredential(credential: Credential): void;
   revoke(digest: string): void;

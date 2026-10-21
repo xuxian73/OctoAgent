@@ -35,7 +35,7 @@ export function renderMarket() {
   )}<button id="preview">查看责任主体确认摘要</button><pre id="summary"></pre><label><input id="confirmed" type="checkbox">本人确认该版本的方案、价格、周期、风险与权限需求</label><button id="submit">确认提交</button><button id="withdraw">撤回此版本</button>${input(
     "supplement",
     "补充说明（不改变需求范围）"
-  )}<button id="add-supplement">补充说明</button><button id="history">加载报价版本</button><pre id="versions"></pre></section><section><h2>并排比较</h2><label>排序<select id="sort"><option value="risk">风险优先</option><option value="capabilities">能力标签数量（自述）</option><option value="days">周期</option><option value="price">价格（同时比较风险与周期）</option></select></label><button id="compare">比较最新有效报价</button><div id="comparison" style="overflow-x:auto"></div></section><section><h2>澄清与时间线</h2><p>回答仅甲方与回答方可见。澄清不会修改已发布需求。</p>${input(
+  )}<button id="add-supplement">补充说明</button><button id="history">加载报价版本</button><pre id="versions"></pre></section><section><h2>并排比较</h2><label>排序<select id="sort"><option value="risk">风险优先</option><option value="capabilities">能力标签数量（自述）</option><option value="days">周期</option><option value="price">价格（同时比较风险与周期）</option></select></label><button id="compare">比较最新有效报价</button><div id="comparison" style="overflow-x:auto"></div></section><section><h2>澄清与时间线</h2><p>定向问题与回复仅获准甲方和对应卖方责任主体可见。回复不会修改已发布需求版本或合同范围，也不会授予附件或仓库权限。</p>${input(
     "recipient",
     "提问对象（责任主体 ID 或 all）"
   )}${input("topic", "问题主题")}${input(
@@ -43,7 +43,7 @@ export function renderMarket() {
     "问题内容"
   )}<button id="ask">向报价方提问</button>${input(
     "question-id",
-    "问题序号",
+    "原问题序号（甲方回复卖方澄清；卖方回复甲方提问）",
     "number"
   )}${input("answer", "结构化回答")}${input("evidence", "证据")}${input(
     "impact",
@@ -143,13 +143,26 @@ export function mountMarket(root: Document) {
         "无（私密附件默认隐藏）"
     );
     line("任务时间线", "按时间和事件序号排序；澄清不会修改需求范围");
-    for (const event of data.timeline)
+    for (const event of data.timeline) {
       line(
         `#${event.sequence} · ${new Date(
           event.created_at
         ).toLocaleString()} · ${event.actor_id} · ${event.kind}`,
-        JSON.stringify(event.payload)
+        event.kind === "answer"
+          ? `回复原问题 #${event.payload.questionId}：${event.payload.answer}；证据：${event.payload.evidence}；影响说明：${event.payload.impact}`
+          : JSON.stringify(event.payload)
       );
+      if (["question", "clarification"].includes(event.kind)) {
+        const reply = root.createElement("button");
+        reply.textContent = `回复${
+          event.kind === "clarification" ? "卖方澄清" : "甲方提问"
+        } #${event.sequence}`;
+        reply.addEventListener("click", () => {
+          input("question-id").value = String(event.sequence);
+        });
+        container.append(reply);
+      }
+    }
   });
   on("draft", async () => {
     const proposal = Object.fromEntries(

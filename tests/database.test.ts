@@ -27,7 +27,7 @@ test("fresh migration matches schema, is repeatable and detects tampering", () =
     assert.equal(
       inspection.prepare("SELECT count(*) AS count FROM _migrations").get()!
         .count,
-      13
+      14
     );
     inspection.exec("UPDATE _migrations SET checksum = 'modified'");
     assert.throws(() => database.migrate(), /modified/);

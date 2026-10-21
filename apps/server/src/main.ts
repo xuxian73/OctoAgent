@@ -36,7 +36,8 @@ const server = createServer((request, response) => {
     database.contracts(authorization),
     database.workspaces(authorization),
     login,
-    database.onboarding(authorization)
+    database.onboarding(authorization),
+    database.disputes(authorization)
   );
 });
 server.on("close", () => database.close());
