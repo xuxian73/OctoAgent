@@ -64,8 +64,8 @@ test("offline pages + HTTP + MCP: publish, compare, contract, evidence, rework, 
       for (const repository of JSON.parse(evidence)) {
         assert.equal(repository.provider, "offline-fake");
         assert.equal(repository.deployments.length, 0);
-        assert.ok(repository.commits.length > 0);
-        assert.ok(repository.submissions.length > 0);
+        assert.ok(Object.keys(repository.branches).length > 0);
+        assert.ok(repository.zipDeliveries.length > 0);
       }
       // Test output provides safe traceable evidence, not raw API payloads.
       for (const step of report.steps.filter(s =>
@@ -169,6 +169,14 @@ test("workspace page loads seeded API evidence and clears it on tenant switch", 
       }
       const elements: Record<string, Element> = Object.fromEntries(
         [
+          "git-extension",
+          "zipDeliveries",
+          "zip-refresh",
+          "zip-file",
+          "zip-form",
+          "zip-summary",
+          "zip-instructions",
+          "zip-issues",
           "git-controls",
           "github-write",
           "github-pr",
@@ -235,8 +243,8 @@ test("workspace page loads seeded API evidence and clears it on tenant switch", 
         });
       await load();
       assert.match(elements.status!.textContent, /completed/);
-      assert.equal(JSON.parse(elements.submissions!.textContent).length, 2);
-      assert.equal(JSON.parse(elements.artifacts!.textContent).length, 2);
+      assert.equal(JSON.parse(elements.zipDeliveries!.textContent).length, 2);
+      assert.equal(JSON.parse(elements.artifacts!.textContent).length, 0);
       assert.ok(
         JSON.parse(elements.context!.textContent).auditEventReferences.length >
           0

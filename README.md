@@ -213,11 +213,11 @@ Cookie 写请求沿用 CSRF 校验。签发响应禁止缓存，原文凭据只�
 
 ## 真实本地文件扫描（#40）
 
-`POST /api/files` 在 SQLite 提交实际字节后调用本机 ClamAV。状态为 `quarantined → scanning → clean / rejected / unavailable`。扫描器名称、开始/完成时间及扫描 checksum 由服务端记录；客户端字段不能指定放行状态。已有扫描结论在迁移时全部退回隔离，须重新扫描。普通下载和工作区文件制品绑定/提交均重新检查当前字节、大小、checksum、扫描 checksum 和非模拟结果；旧结果或模拟扫描不放行。当前仓库只有模拟 Git provider，没有真实 Git 导入入口；以后接入导入时必须通过同一个 `Files.download` 放行检查读取字节。
+`POST /api/files` 在 SQLite 提交实际字节后调用本机 ClamAV。状态为 `quarantined → scanning → clean / rejected / unavailable`。扫描器名称、开始/完成时间及扫描 checksum 由服务端记录；客户端字段不能指定放行状态。已有扫描结论在迁移时全部退回隔离，须重新扫描。普通下载和工作区文件制品绑定/提交均重新检查当前字节、大小、checksum、扫描 checksum 和非模拟结果；旧结果或模拟扫描不放行。已有 Git 扩展保留；默认 ZIP 交付无需 Git/GitHub，统一通过 `Files.download` 核验字节与扫描门槛。
 
 部署者需自行安装 `clamscan` 和本地病毒特征库（通常由部署环境的 `freshclam` 更新）。通过 `.env` 设置 `CLAMAV_EXECUTABLE` 为可信可执行文件的绝对路径，`CLAMAV_TIMEOUT_MS` 为 1–60000 毫秒，默认 30000。应用不下载病毒库、不访问在线扫描服务、不接受请求中的命令或宿主文件路径。默认 Docker 镜像未安装 ClamAV，需在部署镜像安装依赖及提供可读取的病毒库；否则扫描明确为 `unavailable`。
 
-扫描以无 shell 子进程的标准输入接收数据库读回的字节，参数固定，限制输入 10 MiB、输出 64 KiB，超时强制终止。返回码 0 为 clean，1 为 rejected，其他退出、缺少程序/病毒库、超时和异常均为 unavailable。不输出扫描器原始日志。ZIP 只允许隔离保存，不解包、不认证归档内容，真实适配器返回 rejected。
+扫描以无 shell 子进程的标准输入接收数据库读回的字节，参数固定，限制输入 10 MiB、输出 64 KiB，超时强制终止。返回码 0 为 clean，1 为 rejected，其他退出、缺少程序/病毒库、超时和异常均为 unavailable。不输出扫描器原始日志。ZIP 在结构校验后由 ClamAV 受限读取内容；不写入应用目录或执行代码。结构校验与资源限制见 [ZIP 交付说明](docs/zip-delivery.md)。
 
 上传同步等待一次有界扫描，因此单进程请求可能等待最多配置的超时时间。失败后可在文件列表重试，或由有当前版本写权限的调用者发送 `POST /api/files/:id/scan`（无需请求体）。同一文件的活动扫描通过数据库原子认领互斥；超过两分钟的遗留 scanning 可重新认领，尝试 ID 防止旧进程回写。重试期间禁止读取。重放上传不会重新扫描已完成对象。只读用户不能重试。`GET /api/health` 的 `fileScanner` 用固定无私密数据探针报告 available/unavailable，不包含路径、版本输出或上传内容；健康状态不是任何上传对象的放行凭据。
 
@@ -227,8 +227,8 @@ Cookie 写请求沿用 CSRF 校验。签发响应禁止缓存，原文凭据只�
 npm run scan:integration
 ```
 
-该命令实际运行配置的 ClamAV，将临时文件读回后扫描：普通文本必须 clean，标准 EICAR 测试样本必须 rejected。临时文件随后删除。两项符合才报告真实联调通过；缺依赖或病毒库、超时、结果不符时以退出码 1 报告“未验证”。此命令不属于离线默认检查，也不会安装依赖。
+该命令实际运行配置的 ClamAV，将临时文件读回后扫描：普通文本及正常 ZIP 必须 clean，标准 EICAR 文本及包含该样本的 ZIP 必须 rejected。临时文件随后删除。四项符合才报告真实联调通过；缺依赖或病毒库、超时、结果不符时以退出码 1 报告“未验证”。此命令不属于离线默认检查，也不会安装依赖。
 
-`./scripts/check.sh` 的扫描测试使用明确注入的可控适配器和临时进程 fixture，覆盖状态、真实临时字节、超时、退出码、重试、扫描对象校验、租约及旧结果回写防护。它们验证集成逻辑，**不能作为真实 ClamAV 扫描成功的证明**。历史演示种子显式注入模拟扫描器，仍为模拟演示；应用默认不使用 FakeScanner。
+`./scripts/check.sh` 的扫描测试使用明确注入的可控适配器和临时进程 fixture，覆盖状态、真实临时字节、超时、退出码、重试、扫描对象校验、租约及旧结果回写防护。它们验证集成逻辑，**不能作为真实 ClamAV 扫描成功的证明**。隔离演示种子显式使用名称带 controlled-offline-demo 的受控适配器及合成 ZIP，仍为演示，不代表真实病毒扫描；已有历史数据不会升级或伪造文件。应用默认不使用这些适配器。
 
 显式 GitHub 连接与真实 REST 适配见 [GitHub 连接说明](docs/github.md)。默认仍可独立使用真实本地 Git；离线 HTTP 协议测试不代表实际 GitHub 已联调，真实联调目前未验证。

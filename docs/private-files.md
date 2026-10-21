@@ -6,14 +6,14 @@
 
 所有接口使用既有 Web 会话/CSRF 或授权 Token；每次请求重新检查当前资源权限，不提供公开直链。
 
-- `POST /api/files`：`application/octet-stream` 原始字节，`X-File-Metadata` 为 URI 编码 JSON。字段为 `kind`（`requirement` / `artifact`）、`resourceId`、`version`、`revision`、`milestoneId`、`sha`、`name`、`mime`、`requestKey`；可选 `checksum` 仅用作期望值，错误则拒绝。服务端计算大小和摘要。
-- 需求文件绑定当前已发布版本和草稿 revision；`milestoneId`、`sha` 必须为空。制品绑定合同版本、该版本里程碑和提交 SHA，上传需要现有 artifact 授权。
+- `POST /api/files`：`application/octet-stream` 原始字节，`X-File-Metadata` 为 URI 编码 JSON。字段为 `kind`（`requirement` / `artifact`）、`resourceId`、`version`、`revision`、`milestoneId`、可选 `sha`（默认空）、`name`、`mime`、`requestKey`；可选 `checksum` 仅用作期望值，错误则拒绝。服务端计算大小和摘要。
+- 需求文件绑定当前已发布版本和草稿 revision；`milestoneId`、`sha` 必须为空。ZIP 制品绑定合同版本和该版本里程碑，不要求 Git SHA；仅可选 Git 导入兼容旧 SHA 关联，上传需要现有 artifact 授权。
 - `GET /api/files?kind=...&resourceId=...`：授权文件列表，包含版本、责任人、摘要和扫描状态。
 - `GET /api/files/:id`：元数据。
 - `GET /api/files/:id/download`：仅 clean 文件返回原始字节；安全文件名、attachment、nosniff、private/no-store。其他状态返回 `FILE_SCAN_BLOCKED`。
 - 工作区 `upload_artifact` 命令支持 `fileId`、`sha`、`milestoneId`，重新核对归属、版本和扫描状态；提交再次核验。历史模拟 GitHub 制品继续标识模拟、无实际字节，不是私有文件的下载替代品。
 
-默认每资源版本最多 20 个文件，每个最多 10 MiB。白名单为 UTF-8 `.ts`/`.txt`（text/plain）、`.md`（text/markdown）、合法 `.json`（application/json）、ZIP（application/zip，检查文件头）。文本类型不代表内容安全；仍必须扫描。ZIP 仅保存，不解包、不执行。`FILE_MAX_BYTES`、`FILE_MAX_COUNT`、`FILE_EXTENSIONS` 环境变量配置数量、大小及扩展名白名单（扩展名必须是上述白名单的子集，大小不能超过 10 MiB）。
+默认每资源版本最多 20 个文件，每个最多 10 MiB。白名单为 UTF-8 `.ts`/`.txt`（text/plain）、`.md`（text/markdown）、合法 `.json`（application/json）、ZIP（application/zip，完整目录、CRC 与内容校验，详见 [ZIP 交付](zip-delivery.md)）。文本类型不代表内容安全；仍必须扫描。ZIP 只持久化原包；扫描器受限读取内容，不写入应用目录、不执行。`FILE_MAX_BYTES`、`FILE_MAX_COUNT`、`FILE_EXTENSIONS` 环境变量配置数量、大小及扩展名白名单（扩展名必须是上述白名单的子集，大小不能超过 10 MiB）。
 
 ## 扫描边界
 

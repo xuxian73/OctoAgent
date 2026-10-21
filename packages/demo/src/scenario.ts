@@ -1,3 +1,5 @@
+import { Files } from "../../database/src/files.js";
+import { zip } from "../../security/src/zip-sample.js";
 import { FakeGitHubProvider } from "../../delivery/src/github.js";
 import { FakeScanner } from "../../security/src/index.js";
 import assert from "node:assert/strict";
@@ -489,57 +491,47 @@ export async function runScenario(db: DatabaseSync): Promise<Report> {
         assert.deepEqual(w.deployments, []);
         return w;
       };
+      const files = new Files(db, auth, {
+        name: "controlled-offline-demo-adapter-not-security-evidence",
+        simulated: false,
+        scan: () => "clean"
+      });
       const deliver = async (revision: number) => {
-        await work("commit", {
-          branch: "delivery",
-          summary: `求和实现修订 ${revision}`,
-          files: {
-            "sum.ts": `// revision ${revision}\nexport const sum = (a: number, b: number) => a + b;\n`
-          }
-        });
-        const w = await safeState();
-        const sha = w.commits.at(-1)!.sha;
         await work(
           "submit_milestone",
-          { sha, milestoneId, summary: "证据不足" },
+          { milestoneId, summary: "文字不足" },
           deliveryToken,
           "EVIDENCE_INCOMPLETE"
         );
-        for (const kind of ["test", "typecheck"]) {
-          assert.equal(
-            (
-              await call(delivery, "run_check", {
-                workspace_id: contract.id,
-                version: 1,
-                sha,
-                kind
-              })
-            ).requires_human_confirmation,
-            true
-          );
-          await work("run_check", { sha, kind });
-        }
-        await work("create_pull_request", { sha });
-        const content = `离线模拟制品 revision ${revision}`;
-        await work("upload_artifact", {
-          sha,
-          name: "report.txt",
-          content,
-          checksum: checksum(content)
-        });
-        await work("submit_milestone", {
-          sha,
-          milestoneId,
-          summary: "完整离线证据，请责任主体核对"
-        });
-        const after = await safeState();
-        assert.ok(after.checks.filter(c => c.sha === sha).every(c => c.passed));
-        assert.equal(after.artifacts.at(-1)!.checksum, checksum(content));
-        assert.equal(after.pullRequests.at(-1)!.sha, sha);
-        assert.equal(
-          (await api<Contract>(buyer, contractPath)).milestones[0]!.status,
-          "submitted"
+        // Explicit isolated demo fixture, never installed by the application server.
+        db.prepare(
+          "UPDATE delivery_permissions SET expires_at=? WHERE contract_id=? AND permission='artifact'"
+        ).run(Date.now() + 900000, contract.id);
+        const file = files.upload(
+          deliveryToken,
+          {
+            kind: "artifact",
+            resourceId: contract.id,
+            version: 1,
+            revision: 0,
+            milestoneId,
+            sha: "",
+            name: "delivery.zip",
+            mime: "application/zip",
+            requestKey: "zip-" + key()
+          },
+          zip(`demo revision ${revision}`)
         );
+        await files.scan(String(file.id));
+        await work("submit_milestone", {
+          milestoneId,
+          fileId: file.id,
+          summary: "离线受控扫描样本",
+          instructions: "阅读 README",
+          knownIssues: "演示数据，不代表真实安全扫描"
+        });
+        contract = await api<Contract>(buyer, contractPath);
+        assert.equal(contract.milestones[0]!.status, "submitted");
       };
       await command(seller, "milestone", { milestoneId, to: "in_progress" });
       assert.equal(contract.milestones[0]!.status, "in_progress");
@@ -548,6 +540,7 @@ export async function runScenario(db: DatabaseSync): Promise<Report> {
       const reviewArgs = {
         contract_id: contract.id,
         milestone_id: milestoneId,
+        delivery_id: String(contract.zipDeliveries.at(-1)!.id),
         reason: { code: "evidence", detail: "核对模拟证据" }
       };
       const recommendation = await call(review, "review_milestone", {
@@ -569,10 +562,12 @@ export async function runScenario(db: DatabaseSync): Promise<Report> {
         );
         await command(buyer, "milestone", {
           milestoneId,
-          to: "changes_requested"
+          to: "changes_requested",
+          deliveryId: contract.zipDeliveries.at(-1)!.id
         });
         assert.equal(contract.milestones[0]!.status, "changes_requested");
         await deliver(2);
+        reviewArgs.delivery_id = String(contract.zipDeliveries.at(-1)!.id);
         assert.equal(
           (await call(review, "accept_milestone", reviewArgs))
             .requires_human_confirmation,
@@ -591,7 +586,11 @@ export async function runScenario(db: DatabaseSync): Promise<Report> {
           "FORBIDDEN"
         );
         await safeState();
-        await command(buyer, "milestone", { milestoneId, to: "accepted" });
+        await command(buyer, "milestone", {
+          milestoneId,
+          to: "accepted",
+          deliveryId: contract.zipDeliveries.at(-1)!.id
+        });
         assert.equal(contract.milestones[0]!.status, "accepted");
         await command(buyer, "transition", { to: "completed" });
       } else {

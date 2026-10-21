@@ -16,7 +16,7 @@ const types: Record<string, string> = {
   zip: "application/zip"
 };
 export function renderFiles() {
-  return `<section id="private-files"><h2>私有文件</h2><p>文件隔离保存；仅当前字节通过真实扫描后可下载。测试扫描明确标记模拟，不代表真实安全扫描。ZIP 不解包。每版本最多 20 个文件，每个最多 10 MiB。</p><input type="file" id="private-file" accept=".ts,.txt,.md,.json,.zip"><button id="file-upload" type="button">上传真实字节</button><button id="file-refresh" type="button">刷新文件状态</button><progress id="file-progress" max="100" value="0"></progress><p id="file-status" role="status"></p><ul id="file-list"></ul></section>`;
+  return `<section id="private-files"><h2>私有文件</h2><p>文件隔离保存；仅当前字节通过真实扫描后可下载。测试扫描明确标记模拟，不代表真实安全扫描。ZIP 不写入应用目录或执行；扫描器受限读取归档内容。每版本最多 20 个文件，每个最多 10 MiB。</p><input type="file" id="private-file" accept=".ts,.txt,.md,.json,.zip"><button id="file-upload" type="button">上传真实字节</button><button id="file-refresh" type="button">刷新文件状态</button><progress id="file-progress" max="100" value="0"></progress><p id="file-status" role="status"></p><ul id="file-list"></ul></section>`;
 }
 export function mountFiles(root: Document, binding: () => UploadBinding) {
   if (!root.getElementById("private-files")) return;
@@ -62,9 +62,10 @@ export function mountFiles(root: Document, binding: () => UploadBinding) {
       } · ${({
         quarantined: "隔离待扫描",
         scanning: "扫描中",
-        clean: "通过",
-        rejected: "已拒绝",
-        unavailable: "扫描不可用，可重试"
+        clean: "文件已扫描",
+        rejected: "扫描拒绝（感染、不可检查或超限），请检查归档后重新上传",
+        unavailable:
+          "扫描不可用（依赖缺失、超时、过载或执行失败），未放行，可重试"
       } as Record<string, string>)[file.scan_status] || file.scan_status} · ${
         file.scanner
       } · ${
