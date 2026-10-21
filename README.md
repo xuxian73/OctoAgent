@@ -148,3 +148,28 @@ terms 包含 scope、deliverables、acceptance、changeRules、price、currency�
 ### Marketplace MCP（issue #8）
 
 `/mcp` 提供官方 TypeScript SDK 的 Streamable HTTP 接口，支持全部工具、八个资源 URI 模板和三个提示词。使用短期 Agent Bearer Token，详见 [MCP 接口与人工确认协议](docs/mcp.md)。不可逆工具仅返回待人工确认范围，业务 API 保持最终权限与状态校验。
+
+## 离线端到端演示与种子（issue #10）
+
+从干净环境使用 Node.js 22.22.1 / npm 10，在仓库根目录执行：
+
+```bash
+npm ci --offline --no-audit --no-fund  # 需要事先准备与 lockfile 匹配的 npm 缓存
+npm run demo:seed
+npm run test:e2e
+./scripts/check.sh
+```
+
+没有缓存时首次使用 `npm ci --no-audit --no-fund` 安装；此后种子、构建和所有检查均离线，不需要第三方账号。`npm run demo:seed` 一条命令完成编译、真实迁移、合成身份/需求/报价、合同及 fake Git 工作区初始化，并运行模拟 Agent 交付验收。默认输出到 `.data/demo/`；可用 `npm run demo:seed -- /tmp/octo-demo` 指定独立目录。命令不读取 `.env` 或 `DATABASE_URL`，不操作开发数据库。
+
+演示包含甲乙责任主体、买卖双方 Agent、另一位报价方及隔离租户。两个代码需求分别演示“人工发布 → 两份结构化报价比较 → 人工选标 → 双方确认合同 → 独立授权交付 → 要求修改 → 再次提交 → 人工验收完成”和“提交后争议冻结”。模拟驱动明确扮演人类责任主体，通过业务 HTTP API 执行确认；MCP Agent 只产生确认交接，不能自动确认。凭据运行时生成、只保存在进程内，完成后全部撤销；不会打印或导出凭据。
+
+产物：
+
+- `demo.sqlite`：经项目迁移初始化的 SQLite，保存合成业务数据、版本、确认记录和不可篡改审计。
+- `report.json`：每次 API/MCP 请求的 `request_id`、结果及对应审计事件序号，包含确认过期、越权和冻结错误。
+- `repositories.json`：每份合同的本地 fake Git 仓库快照，包含分支、提交、检查、模拟 PR、制品 SHA-256、两次交付和审计引用对应的合同事件。沿用 `FakeGitHubProvider`，仓库状态持久化在 SQLite；不是磁盘上的 `.git`，不执行仓库代码，不连接 GitHub。模拟 PR 的 `.invalid` 地址仅为证据标识。
+
+重复运行会读取同一完成记录并重新导出证据，不增加用户、需求、合同、提交或审计事件。种子写入与完成记录使用同一事务，失败整体回滚，可再次执行。已有非演示用户的数据库会被拒绝。需要全新演示时指定一个新的空目录；演示使用注入时钟验证过期，不等待真实时间。
+
+`tests/e2e.test.ts` 使用临时目录，结束后清理；HTTP 请求直接经过应用 dispatcher/解析器，MCP 使用 SDK 内存传输，不监听端口或访问网络。测试验证关键页面、草稿缺失提示、每个业务状态、人工确认、只读与写入 scope、交付动作分别授权、跨租户隐藏、验收前无结算/生产变更，以及争议后的冻结。它是离线应用集成验收，不是浏览器自动化或真实 GitHub 检查。`./scripts/check.sh` 自动包含此测试，CI 无需新增服务或网络资源。

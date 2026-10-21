@@ -4,3 +4,5 @@ package-lock.json
 .issuepilot
 AGENTS.md
 docs/spec.md
+
+.data

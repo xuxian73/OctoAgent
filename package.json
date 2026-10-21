@@ -21,7 +21,9 @@
     "db:migrate": "npm run build && node --env-file-if-exists=.env dist/packages/database/src/migrate.js",
     "db:check": "node --test dist/tests/database.test.js",
     "test": "node --test dist/tests/*.test.js",
-    "check": "bash scripts/check.sh"
+    "check": "bash scripts/check.sh",
+    "demo:seed": "npm run build && node dist/packages/demo/src/main.js",
+    "test:e2e": "npm run build && node --test dist/tests/e2e.test.js"
   },
   "devDependencies": {
     "@types/node": "22.19.21",
