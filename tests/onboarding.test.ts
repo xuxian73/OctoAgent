@@ -168,15 +168,18 @@ test("contract-only grants expose the project and actual business pages without 
     ]) {
       f.db.exec("SAVEPOINT revoke_context");
       f.db.exec(mutation);
-      assert.equal(contexts.list(f.seller).projects.length, 0);
+      const hasContext = contexts.list(f.seller).projects.length > 0;
       for (const page of ["contracts", "workspaces"]) {
         const denied = await call(`/${page}?project=project-a`);
         assert.equal(
           denied.status,
-          contexts.list(f.seller).canInitialize ? 303 : 403
+          hasContext ? 200 : contexts.list(f.seller).canInitialize ? 303 : 403
         );
-        assert.doesNotMatch(denied.body, /id="contract"/);
-        assert.equal((await call(`/api/${page}/${id}`)).status, 403);
+        if (!hasContext) assert.doesNotMatch(denied.body, /id="contract"/);
+        assert.equal(
+          (await call(`/api/${page}/${id}`)).status,
+          mutation.includes("resource_grants") ? 403 : 200
+        );
       }
       f.db.exec("ROLLBACK TO revoke_context; RELEASE revoke_context");
     }
@@ -558,7 +561,7 @@ test("real shell follows authorized projects and pages; forged context and revok
       );
     }
     assert.match((await f.call("/requirements")).body, /待补全：.*验收标准/);
-    assert.equal((await f.call("/workspaces")).status, 403);
+    assert.equal((await f.call("/workspaces")).status, 200);
     const forged = await f.call("/requirements?project=ungranted");
     assert.equal(forged.status, 403);
     assert.doesNotMatch(forged.body, /id="requirement-form"/);
@@ -567,7 +570,7 @@ test("real shell follows authorized projects and pages; forged context and revok
         "DELETE FROM resource_grants WHERE user_id=? AND resource_id=? AND action='write'"
       )
       .run("new-user", project);
-    assert.equal((await f.call("/contracts")).status, 403);
+    assert.equal((await f.call("/contracts")).status, 200);
     f.db
       .prepare("DELETE FROM resource_grants WHERE user_id=? AND resource_id=?")
       .run("new-user", project);

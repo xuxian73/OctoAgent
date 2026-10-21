@@ -95,6 +95,15 @@ export class SqliteIdentityStore implements IdentityStore {
         .get(userId)
         ? "seller"
         : undefined;
+    if (
+      resource.kind === "contract" &&
+      this.db.prepare("SELECT 1 FROM contracts WHERE id=?").get(resource.id)
+    )
+      return this.db
+        .prepare(
+          "SELECT role FROM contract_parties WHERE contract_id=? AND user_id=?"
+        )
+        .get(resource.id, userId)?.role as Role | undefined;
     // Project access requires BOTH organization membership and explicit project membership.
     const organization = this.db
       .prepare(
@@ -112,6 +121,14 @@ export class SqliteIdentityStore implements IdentityStore {
       | undefined;
   }
   granted(userId: string, scope: Scope, now = Date.now()): boolean {
+    if (scope.kind === "contract" && scope.action === "delegate") {
+      const explicit = this.db
+        .prepare(
+          "SELECT expires_at FROM delivery_permissions WHERE contract_id=? AND actor_id=? AND permission='delegate'"
+        )
+        .get(scope.resourceId, userId);
+      if (explicit) return Number(explicit.expires_at) > now;
+    }
     if (scope.kind === "market")
       return scope.resourceId === "public" && scope.action !== "write";
     if (scope.kind === "task") {

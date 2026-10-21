@@ -176,6 +176,19 @@ export function handleRequest(
         );
         return;
       }
+      if (
+        (path === "/contracts" || path === "/workspaces") &&
+        !new URL(request.url!, "http://localhost").searchParams.has("project")
+      ) {
+        response.end(
+          renderApplication(
+            path === "/contracts" ? renderContracts() : renderWorkspaces(),
+            page,
+            []
+          )
+        );
+        return;
+      }
       if (context?.canInitialize && !context.sellerProfile) {
         response.statusCode = 303;
         response.setHeader("Location", "/onboarding");

@@ -302,8 +302,16 @@ test("buyer evidence page renders structured evidence and clears on contract cha
   class Element extends EventTarget {
     value = "";
     textContent = "";
+    append() {}
+    replaceChildren() {}
   }
   const ids = [
+    "grant-form",
+    "grant-confirmed",
+    "actor",
+    "authorization",
+    "permissions",
+    "branches",
     "session",
     "contract",
     "load",
@@ -327,6 +335,8 @@ test("buyer evidence page renders structured evidence and clears on contract cha
     json: async () => ({
       ok: true,
       data: {
+        actors: [],
+        permissions: [],
         status: "active",
         commits: [{ summary: "完成变更" }],
         checks: [{ log: "PASS" }],
@@ -464,13 +474,16 @@ test("permission audit distinguishes validated subjects, grants, revocations and
     change("seller", "branch", 2000, "seller-grant");
     change("agent-a", "artifact", 3000, "agent-grant");
     change("agent-a", "artifact", 0, "agent-revoke");
-    change("agent-a", "artifact", 3000, "agent-grant");
+    assert.throws(
+      () => change("agent-a", "artifact", 3000, "agent-grant"),
+      ForbiddenError
+    );
     const rows = f.db
       .prepare(
-        "SELECT * FROM audit_events WHERE event = 'Workspaces.command.authorize' ORDER BY sequence"
+        "SELECT * FROM audit_events WHERE event = 'Workspaces.command.authorize' AND result='success' ORDER BY sequence"
       )
       .all();
-    assert.equal(rows.length, 4);
+    assert.equal(rows.length, 3);
     assert.deepEqual(
       rows.map(row => [
         row.target_subject,
@@ -481,8 +494,7 @@ test("permission audit distinguishes validated subjects, grants, revocations and
       [
         ["user:seller", "branch", "grant", 3000],
         ["agent:agent-a", "artifact", "grant", 4000],
-        ["agent:agent-a", "artifact", "revoke", 1000],
-        ["agent:agent-a", "artifact", "grant", 4000]
+        ["agent:agent-a", "artifact", "revoke", 1000]
       ]
     );
     for (const row of rows) {
@@ -499,7 +511,7 @@ test("permission audit distinguishes validated subjects, grants, revocations and
       );
       assert.equal(row.scope, rows[0]!.scope);
     }
-    // Replaying an earlier grant preserves its audit details without undoing revocation.
+    // Replaying an earlier grant is rejected without undoing revocation.
     assert.equal(
       f.db
         .prepare(
@@ -550,3 +562,89 @@ test("permission audit distinguishes validated subjects, grants, revocations and
     f.db.close();
   }
 });
+
+for (const status of ["paused", "disputed", "cancelled"]) {
+  for (const legacy of [true, false]) {
+    test(`${status} contracts allow explicit revocation of ${
+      legacy ? "legacy" : "expiring"
+    } delegation`, () => {
+      const f = fixture();
+      try {
+        const grant = {
+          actorId: "seller",
+          permission: "delegate",
+          ttlMs: 900000,
+          confirmed: true,
+          requestKey: "delegate-grant"
+        };
+        if (!legacy) f.command("authorize", grant, f.buyer);
+        // The legacy fixture has a permanent resource grant and a live Agent.
+        assert.equal(f.contracts.read(f.agent, f.id).id, f.id);
+        f.db
+          .prepare("UPDATE contracts SET status=? WHERE id=?")
+          .run(status, f.id);
+        const revoke = { ...grant, ttlMs: 0, requestKey: "delegate-revoke" };
+        for (const token of [f.seller, f.second, f.agent])
+          assert.throws(
+            () => f.command("authorize", revoke, token),
+            ForbiddenError
+          );
+        assert.throws(
+          () =>
+            f.command("authorize", { ...revoke, confirmed: false }, f.buyer),
+          ForbiddenError
+        );
+        assert.throws(
+          () => f.command("authorize", { ...revoke, version: 0 }, f.buyer),
+          /STALE_CONTRACT/
+        );
+        assert.throws(
+          () => f.command("authorize", grant, f.buyer),
+          /CONTRACT_NOT_ACTIVE/
+        );
+        const result = f.command("authorize", revoke, f.buyer);
+        assert.deepEqual(f.command("authorize", revoke, f.buyer), result);
+        assert.throws(
+          () =>
+            f.auth.issueAgentToken(f.seller, "agent-a", [
+              { kind: "contract", resourceId: f.id, action: "read" }
+            ]),
+          ForbiddenError
+        );
+        assert.throws(() => f.contracts.read(f.agent, f.id), ForbiddenError);
+        assert.throws(() => f.service.read(f.agent, f.id), ForbiddenError);
+        assert.throws(
+          () =>
+            f.command(
+              "create_workspace_branch",
+              { branch: "blocked" },
+              f.seller
+            ),
+          /CONTRACT_NOT_ACTIVE/
+        );
+        const audit = f.db
+          .prepare(
+            "SELECT * FROM audit_events WHERE event='Workspaces.command.authorize' AND permission_action='revoke' ORDER BY sequence DESC LIMIT 1"
+          )
+          .get()!;
+        assert.equal(audit.actor_id, "user:buyer");
+        assert.equal(audit.target_subject, "user:seller");
+        assert.equal(audit.permission, "delegate");
+        assert.equal(audit.permission_expires_at, 1000);
+        assert.equal(audit.result, "success");
+        // Resuming delivery must not restore the old grant or permit its replay.
+        f.db
+          .prepare("UPDATE contracts SET status='active' WHERE id=?")
+          .run(f.id);
+        assert.throws(() => f.contracts.read(f.agent, f.id), ForbiddenError);
+        if (!legacy)
+          assert.throws(
+            () => f.command("authorize", grant, f.buyer),
+            ForbiddenError
+          );
+      } finally {
+        f.db.close();
+      }
+    });
+  }
+}

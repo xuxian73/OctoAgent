@@ -44,10 +44,7 @@ export class Workspaces {
         return {
           ...object,
           targetSubject:
-            (result.actor ===
-            db
-              .prepare("SELECT seller_id FROM contracts WHERE id = ?")
-              .get(object.id)?.seller_id
+            (db.prepare("SELECT 1 FROM users WHERE id=?").get(result.actor)
               ? "user:"
               : "agent:") + result.actor,
           permissionChange: {
@@ -81,8 +78,25 @@ export class Workspaces {
     };
   }
   read(token: string, id: string) {
-    const { contract, row, state } = this.access(token, id);
+    const { contract, access, row, state } = this.access(token, id);
     return {
+      party: access.role,
+      actors: [
+        { id: contract.seller_id, label: "乙方本人" },
+        { id: String(contract.buyer_id), label: "甲方本人（仅委托）" },
+        ...this.db
+          .prepare("SELECT id FROM agents WHERE responsible_user_id=?")
+          .all(contract.seller_id)
+          .map(a => ({ id: String(a.id), label: "Agent " + a.id }))
+      ],
+      permissions: this.db
+        .prepare(
+          `SELECT actor_id, permission, expires_at FROM delivery_permissions WHERE contract_id=?
+          UNION ALL SELECT g.user_id, 'delegate', NULL FROM resource_grants g
+          WHERE g.resource_kind='contract' AND g.resource_id=? AND g.action='delegate'
+          AND NOT EXISTS (SELECT 1 FROM delivery_permissions p WHERE p.contract_id=g.resource_id AND p.actor_id=g.user_id AND p.permission='delegate')`
+        )
+        .all(id, id),
       contractId: id,
       version: contract.version,
       status: contract.status,
@@ -113,11 +127,13 @@ export class Workspaces {
     this.db.exec(nested ? "SAVEPOINT workspaces_operation" : "BEGIN IMMEDIATE");
     try {
       const { contract, access, state } = this.access(token, id, true);
-      if (contract.status !== "active")
+      const action = text(input.action);
+      // Revocation must remain available when delivery is frozen or ended.
+      const revoking = action === "authorize" && input.ttlMs === 0;
+      if (contract.status !== "active" && !revoking)
         throw new RequirementError("CONTRACT_NOT_ACTIVE", 409);
       if (input.version !== contract.version)
         throw new RequirementError("STALE_CONTRACT", 409);
-      const action = text(input.action);
       const key = text(input.requestKey);
       const sensitive = ["deploy", "migrate", "delete", "expand_permissions"];
       const required: Record<string, Permission> = {
@@ -159,21 +175,46 @@ export class Workspaces {
       if (prior) {
         if (prior.fingerprint !== fingerprint)
           throw new RequirementError("REQUEST_KEY_REUSED", 409);
+        const previous = JSON.parse(String(prior.result));
+        if (action === "authorize") {
+          const saved = previous.result;
+          const current = this.db
+            .prepare(
+              "SELECT expires_at FROM delivery_permissions WHERE contract_id=? AND actor_id=? AND permission=?"
+            )
+            .get(id, saved.actor, saved.permission);
+          if (
+            !current ||
+            current.expires_at !== saved.expiresAt ||
+            (!saved.revoked && saved.expiresAt <= this.now())
+          )
+            throw new ForbiddenError();
+        }
         this.db.exec(nested ? "RELEASE workspaces_operation" : "COMMIT");
-        return JSON.parse(String(prior.result));
+        return previous;
       }
       let result: unknown;
       if (action === "authorize") {
         const actor = text(input.actorId);
         const permission = text(input.permission);
-        if (!permissions.includes(permission as Permission))
+        if (
+          permission !== "delegate" &&
+          !permissions.includes(permission as Permission)
+        )
           throw new RequirementError("INVALID_PERMISSION");
         const agent = this.db
           .prepare("SELECT responsible_user_id FROM agents WHERE id = ?")
           .get(actor);
         if (
+          (actor !== contract.buyer_id || permission !== "delegate") &&
           actor !== contract.seller_id &&
           agent?.responsible_user_id !== contract.seller_id
+        )
+          throw new ForbiddenError();
+        if (
+          permission === "delegate" &&
+          actor !== contract.seller_id &&
+          actor !== contract.buyer_id
         )
           throw new ForbiddenError();
         const ttl = input.ttlMs;

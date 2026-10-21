@@ -533,3 +533,229 @@ test("dual-role seller with an owned project searches other organizations from t
     f.db.close();
   }
 });
+
+test("cross-organization orders, contract roles and explicit expiring delivery delegation", async () => {
+  const f = await setup();
+  try {
+    const contracts = new Contracts(f.db, f.auth, () => 1000);
+    const workspaces = new Workspaces(f.db, f.auth, () => 1000);
+    const task = f.create();
+    f.publish(task);
+    const submit = (token: string) => {
+      const bid = f.market.draft(token, task, proposal);
+      return f.market.submit(
+        token,
+        bid.id,
+        f.market.preview(token, bid.id).confirmation,
+        true
+      );
+    };
+    const bid = submit(f.seller.token);
+    const losing = submit(f.competitor.token);
+    let contract = contracts.select(f.buyer.token, bid.id, true);
+    const id = contract.id;
+    assert.equal(contracts.select(f.buyer.token, bid.id, true).id, id);
+    assert.throws(
+      () => contracts.select(f.buyer.token, losing.id, true),
+      /BID_ALREADY_SELECTED/
+    );
+    assert.equal(contracts.list(f.seller.token)[0]!.party, "seller");
+    assert.deepEqual(contracts.list(f.competitor.token), []);
+    assert.throws(() => contracts.read(f.competitor.token, id), ForbiddenError);
+    assert.equal(contracts.bids(f.seller.token)[0]!.id, bid.id);
+    assert.throws(() => f.req.read(f.seller.token, task), ForbiddenError);
+    assert.equal(
+      f.db
+        .prepare(
+          "SELECT count(*) n FROM memberships WHERE user_id=? AND organization_id=?"
+        )
+        .get(f.seller.id, f.project.organizationId!)!.n,
+      0
+    );
+    let sequence = 0;
+    const command = (token: string, action: string, extra = {}) => {
+      contract = contracts.command(token, id, {
+        action,
+        version: contract.version,
+        revision: contract.revision,
+        requestKey: String(++sequence),
+        confirmed: true,
+        reason: { code: "review", detail: "已审阅当前条款" },
+        ...extra
+      });
+      return contract;
+    };
+    command(f.buyer.token, "transition", { to: "pending_confirmation" });
+    command(f.buyer.token, "confirm");
+    assert.throws(() => workspaces.read(f.seller.token, id), ForbiddenError);
+    command(f.seller.token, "confirm");
+    assert.equal(workspaces.read(f.seller.token, id).contractId, id);
+    assert.equal(
+      f.db
+        .prepare(
+          "SELECT count(*) n FROM delivery_workspaces WHERE contract_id=?"
+        )
+        .get(id)!.n,
+      1
+    );
+    const agent = f.agents.create(f.seller.token, {
+      kind: "seller",
+      capabilities: []
+    });
+    const scopes = (["read", "write"] as const).map(action => ({
+      kind: "contract" as const,
+      resourceId: id,
+      action
+    }));
+    assert.throws(
+      () => f.auth.issueAgentToken(f.seller.token, agent.id, scopes),
+      ForbiddenError
+    );
+    const grant = (
+      actorId: string,
+      permission: string,
+      ttlMs: number,
+      requestKey = String(++sequence)
+    ) =>
+      workspaces.command(f.buyer.token, id, {
+        action: "authorize",
+        version: 1,
+        actorId,
+        permission,
+        ttlMs,
+        confirmed: true,
+        requestKey
+      });
+    const branch = {
+      action: "create_workspace_branch",
+      version: 1,
+      requestKey: "branch",
+      branch: "delivery"
+    };
+    assert.throws(
+      () => workspaces.command(f.seller.token, id, branch),
+      ForbiddenError
+    );
+    grant(f.seller.id, "branch", 1000);
+    workspaces.command(f.seller.token, id, branch);
+    assert.throws(
+      () => f.auth.issueAgentToken(f.seller.token, agent.id, scopes),
+      ForbiddenError
+    );
+    grant(f.seller.id, "delegate", 1000, "delegate");
+    const token = f.auth.issueAgentToken(f.seller.token, agent.id, scopes);
+    assert.throws(() => workspaces.command(token, id, branch), ForbiddenError);
+    grant(agent.id, "branch", 1000);
+    workspaces.command(token, id, { ...branch, branch: "agent" });
+    grant(f.seller.id, "delegate", 0);
+    assert.throws(
+      () => workspaces.command(token, id, { ...branch, branch: "agent" }),
+      ForbiddenError
+    );
+    assert.throws(
+      () => grant(f.seller.id, "delegate", 1000, "delegate"),
+      ForbiddenError
+    );
+    grant(f.seller.id, "branch", 0);
+    assert.throws(
+      () => workspaces.command(f.seller.token, id, branch),
+      ForbiddenError
+    );
+    grant(f.seller.id, "branch", 1, "expire");
+    const expired = new Workspaces(f.db, f.auth, () => 1002);
+    assert.throws(
+      () => expired.command(f.seller.token, id, branch),
+      ForbiddenError
+    );
+    assert.throws(
+      () =>
+        expired.command(f.buyer.token, id, {
+          action: "authorize",
+          version: 1,
+          actorId: f.seller.id,
+          permission: "branch",
+          ttlMs: 1,
+          confirmed: true,
+          requestKey: "expire"
+        }),
+      ForbiddenError
+    );
+    for (const status of ["paused", "disputed", "cancelled"]) {
+      f.db.prepare("UPDATE contracts SET status=? WHERE id=?").run(status, id);
+      assert.throws(
+        () => grant(f.seller.id, "branch", 1000),
+        /CONTRACT_NOT_ACTIVE/
+      );
+    }
+    f.db
+      .prepare("UPDATE contracts SET status='active', version=2 WHERE id=?")
+      .run(id);
+    assert.throws(() => grant(f.seller.id, "branch", 1000), /STALE_CONTRACT/);
+  } finally {
+    f.db.close();
+  }
+});
+
+test("one principal can be seller and buyer on different contracts without joining the other project", async () => {
+  const f = await setup();
+  try {
+    const contracts = new Contracts(f.db, f.auth, () => 1000);
+    const firstTask = f.create();
+    f.publish(firstTask);
+    const firstBid = f.market.draft(f.seller.token, firstTask, proposal);
+    f.market.submit(
+      f.seller.token,
+      firstBid.id,
+      f.market.preview(f.seller.token, firstBid.id).confirmation,
+      true
+    );
+    const first = contracts.select(f.buyer.token, firstBid.id, true);
+    const onboarding = new Onboarding(f.db, f.auth);
+    const own = onboarding.create(f.seller.token, {
+      role: "buyer",
+      organizationName: "另一组织",
+      projectName: "另一项目"
+    });
+    onboarding.create(f.buyer.token, {
+      role: "seller",
+      displayName: "交付方",
+      capabilities: "TypeScript",
+      taskTypes: "新功能",
+      bio: "合成资料"
+    });
+    assert.ok("projectId" in own);
+    const task = f.req.create(f.seller.token, own.projectId!, f.draft);
+    f.req.publish(
+      f.seller.token,
+      task.id,
+      f.req.preview(f.seller.token, task.id).confirmation,
+      true
+    );
+    const bid = f.market.draft(f.buyer.token, task.id, proposal);
+    f.market.submit(
+      f.buyer.token,
+      bid.id,
+      f.market.preview(f.buyer.token, bid.id).confirmation,
+      true
+    );
+    const second = contracts.select(f.seller.token, bid.id, true);
+    const parties = contracts.list(f.seller.token);
+    assert.equal(parties.find(c => c.id === first.id)!.party, "seller");
+    assert.equal(parties.find(c => c.id === second.id)!.party, "buyer");
+    for (const [id, token] of [
+      [first.id, f.seller.token],
+      [second.id, f.buyer.token]
+    ])
+      assert.equal(
+        f.auth.authorize(token!, {
+          kind: "contract",
+          resourceId: id!,
+          action: "write"
+        }).role,
+        "seller"
+      );
+    assert.throws(() => f.req.read(f.buyer.token, task.id), ForbiddenError);
+  } finally {
+    f.db.close();
+  }
+});

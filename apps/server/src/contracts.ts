@@ -52,6 +52,9 @@ async function executeRoute(
     let data: unknown;
     if (method === "POST" && path.length === 4 && id === "select")
       data = service.select(token, String(body.bidId || ""), body.confirmed);
+    else if (method === "GET" && path.length === 3) data = service.list(token);
+    else if (method === "GET" && path.length === 4 && id === "bids")
+      data = service.bids(token);
     else if (method === "GET" && path.length === 4)
       data = service.read(token, id);
     else if (method === "POST" && path.length === 5 && action === "commands")
