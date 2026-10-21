@@ -1,3 +1,4 @@
+import { Onboarding } from "./onboarding.js";
 import { LocalAccounts } from "./accounts.js";
 import { McpRequests } from "./mcp.js";
 import { Workspaces } from "./workspaces.js";
@@ -15,6 +16,7 @@ import { IdentityStore } from "../../auth/src/model.js";
 
 // Services depend on this interface, not a driver or SQL dialect.
 export interface Database {
+  onboarding(auth: Authorization): Onboarding;
   readonly accounts: LocalAccounts;
   mcpRequests(): McpRequests;
   readonly identities: IdentityStore;
@@ -36,6 +38,7 @@ export function openDatabase(url: string): Database {
   const connection = new DatabaseSync(path);
   connection.exec("PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
   return {
+    onboarding: auth => new Onboarding(connection, auth),
     accounts: new LocalAccounts(connection),
     mcpRequests: () => new McpRequests(connection),
     identities: new SqliteIdentityStore(connection),
