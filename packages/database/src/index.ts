@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { createHash } from "node:crypto";
 
+import { Contracts } from "./contracts.js";
 import { Market } from "./market.js";
 import { Requirements } from "./requirements.js";
 import { Authorization } from "../../auth/src/index.js";
@@ -12,6 +13,7 @@ import { IdentityStore } from "../../auth/src/model.js";
 // Services depend on this interface, not a driver or SQL dialect.
 export interface Database {
   readonly identities: IdentityStore;
+  contracts(auth: Authorization): Contracts;
   market(auth: Authorization): Market;
   requirements(auth: Authorization): Requirements;
   migrate(): void;
@@ -29,6 +31,7 @@ export function openDatabase(url: string): Database {
   connection.exec("PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
   return {
     identities: new SqliteIdentityStore(connection),
+    contracts: auth => new Contracts(connection, auth),
     market: auth => new Market(connection, auth),
     requirements: auth => new Requirements(connection, auth),
     migrate() {

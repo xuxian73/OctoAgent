@@ -126,3 +126,21 @@ API（JSON 请求，除 public 外均要求唯一 Bearer 请求头）：
 - 比较只取每位责任人最新的非草稿版本；撤回最新版本不会自动恢复旧报价。默认按风险、周期排序，可切换周期、能力标签数量或价格；能力标签为报价方自述，不是平台评级。历史报价保留所引用的需求版本，需求重新发布后应重新报价。
 - 定向问题仅甲方与指定报价方可见；全部报价方问题对已提交报价的参与者可见。回答和补充说明仅甲方与对应责任人可见。时间线以时间、事件序号稳定排序，澄清不修改需求范围。
 - API 前缀 `/api/market`：GET 列表（`projectId`、`stack`、`taskType`、`budgetType`、`maxDays`、`deadlineAfter`、`risk`、`allowAgents`），GET `/:taskId`、`/:taskId/bids`、`/:taskId/compare`、`/:taskId/timeline`；POST `/:taskId/bids`、`/:taskId/questions`、`/:taskId/answers` 和 `/bids/:bidId/{preview,submit,withdraw,supplements}`。请求体为 JSON，凭据仅通过 Authorization header 传递。
+
+### 合同、变更与验收（issue #6）
+
+访问 `/contracts`，从 `/market` 复制已提交报价 ID，甲方勾选人工确认后生成合同草案。每个需求最多选定一份合同；报价、需求版本及公开范围随选择事件保存。合同只授予甲乙责任人精确的 contract read/write/delegate grant，仍验证组织和项目成员关系；Agent 另需合同 scope。平台管理员没有默认读取权。
+
+- 草案 `draft → pending_confirmation` 后，双方人类责任人分别确认同一版本才进入 `active`。双方确认使用版本号而非修订号，允许同时确认；其他命令携带修订号，拒绝过期界面操作。
+- 合法合同操作：draft 可提交确认或取消；pending_confirmation 可取消或争议；active 可暂停、完成、取消或争议；paused 可恢复、取消或争议。完成要求当前版所有里程碑已验收且由甲方操作。completed、cancelled、disputed 无普通出边；本 issue 不实现争议裁决或解冻。
+- 任一方可在 active/paused 提出变更，生成不可覆盖的新条款版本并进入 pending_confirmation。旧条款、确认、里程碑与事件仍可读。新版本创建新的 planned 里程碑，必须重新交付验收，不继承旧版验收结果。
+- 乙方推进 planned → in_progress → submitted；甲方对 submitted 验收 accepted、要求修改 changes_requested 或拒绝 rejected。changes_requested 可重新开始或重新提交；accepted/rejected 是本版本终态。提交必须附证据；所有命令必须填写 `{ code, detail }` 结构化原因。争议通过合同状态操作发起，冻结所有后续写命令。
+- 买方 Agent 仅可保存 `acceptance_report_draft`，不改变里程碑状态；验收事件另标记人工最终确认。结算起始为 unsettled，完成后甲方可登记 manually_confirmed，仅作人工记录，不调用支付、托管或放款。
+
+API 均要求唯一 Bearer 请求头，JSON 请求体上限 200 KB：
+
+- `POST /api/contracts/select`：`{ bidId, confirmed: true }`。
+- `GET /api/contracts/{id}`：合同、历次条款、全部里程碑、双方确认和审计时间线。
+- `POST /api/contracts/{id}/commands`：公共字段 `{ action, version, revision, requestKey, confirmed: true, reason: { code, detail } }`。action 为 transition（另传 to）、confirm、change（另传完整 terms）、milestone（milestoneId、to，提交时附 evidence）、review_draft（milestoneId、report，不要求人工确认）、settlement。
+
+terms 包含 scope、deliverables、acceptance、changeRules、price、currency（CNY）及 milestones 字符串数组。相同责任人同一 requestKey 的同体重试只读取最新结果，不重复执行；变更请求体却复用 key 返回冲突。状态、版本、确认、幂等记录和审计事件在 `BEGIN IMMEDIATE` 事务内写入；旧条款与审计事件有禁止更新/删除的数据库触发器。测试包含独立 SQLite worker 并发确认与重复提交、HTTP 和浏览器交互、事务回滚、版本隔离、Agent 限权与争议冻结。
