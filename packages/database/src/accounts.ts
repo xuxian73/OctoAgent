@@ -1,4 +1,9 @@
-import { randomBytes, scrypt, timingSafeEqual } from "node:crypto";
+import {
+  validAccount,
+  validUsername,
+  passwordMaxLength
+} from "../../shared/src/accounts.js";
+import { randomBytes, randomUUID, scrypt, timingSafeEqual } from "node:crypto";
 import { Audit } from "./security.js";
 import { requestContext, securityContext } from "../../security/src/index.js";
 import { DatabaseSync } from "node:sqlite";
@@ -26,11 +31,7 @@ export class LocalAccounts {
     userId: string,
     password: string
   ): Promise<void> {
-    if (
-      !/^[a-zA-Z0-9_.-]{1,64}$/.test(username) ||
-      password.length < 12 ||
-      password.length > 256
-    )
+    if (!validAccount(username, password))
       throw new Error("Invalid account input");
     const salt = randomBytes(32).toString("hex");
     const hash = (await derive(password, salt)) as Buffer;
@@ -48,15 +49,17 @@ export class LocalAccounts {
       throw error;
     }
   }
+  async register(username: string, password: string): Promise<void> {
+    await this.create(username, randomUUID(), password);
+  }
   async verify(
     username: unknown,
     password: unknown
   ): Promise<string | undefined> {
     const valid =
-      typeof username === "string" &&
-      /^[a-zA-Z0-9_.-]{1,64}$/.test(username) &&
+      validUsername(username) &&
       typeof password === "string" &&
-      password.length <= 256;
+      password.length <= passwordMaxLength;
     const row = valid
       ? this.db
           .prepare("SELECT * FROM local_accounts WHERE username = ?")
