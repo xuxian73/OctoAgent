@@ -1,5 +1,7 @@
 export type Role = "buyer" | "seller" | "admin";
 export type ResourceKind =
+  | "market"
+  | "task"
   | "organization"
   | "project"
   | "dispute"
@@ -15,6 +17,7 @@ export interface Scope {
   action: Action;
 }
 export interface Resource {
+  allowAgents?: boolean;
   kind: ResourceKind;
   id: string;
   organizationId: string;

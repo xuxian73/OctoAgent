@@ -123,6 +123,14 @@ export function audited<T extends object>(
                   .get(c.actor, key)
               : undefined;
             if (prior) {
+              const replay = target as T & {
+                reauthorizeReplay?: (
+                  token: string,
+                  method: string,
+                  args: unknown[]
+                ) => void;
+              };
+              replay.reauthorizeReplay?.(token, property, args);
               if (prior.fingerprint !== fingerprint)
                 throw new RequirementError("REQUEST_KEY_REUSED", 409);
               for (const scope of JSON.parse(String(prior.scopes)) as Scope[])

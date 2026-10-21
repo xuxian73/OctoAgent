@@ -37,6 +37,22 @@ export class SqliteIdentityStore implements IdentityStore {
       : undefined;
   }
   resource(kind: ResourceKind, id: string): Resource | undefined {
+    if (kind === "market" && id === "public")
+      return { kind, id, organizationId: "market", projectId: null };
+    if (kind === "task") {
+      const row = this.db
+        .prepare("SELECT id, market FROM market_publications WHERE id=?")
+        .get(id);
+      return row
+        ? {
+            kind,
+            id,
+            organizationId: "market",
+            projectId: null,
+            allowAgents: JSON.parse(String(row.market)).allowAgents
+          }
+        : undefined;
+    }
     if (kind === "dispute") {
       const row = this.db
         .prepare(
@@ -67,6 +83,18 @@ export class SqliteIdentityStore implements IdentityStore {
       : undefined;
   }
   role(userId: string, resource: Resource): Role | undefined {
+    if (resource.kind === "market" || resource.kind === "task")
+      return this.db
+        .prepare(
+          `SELECT 1 FROM seller_profiles s
+        JOIN memberships m ON m.user_id=s.user_id AND m.organization_id=s.organization_id AND m.project_id=''
+        JOIN resource_grants g ON g.user_id=s.user_id AND g.resource_kind='organization'
+          AND g.resource_id=s.organization_id AND g.action='read'
+        WHERE s.user_id=? AND s.status='completed'`
+        )
+        .get(userId)
+        ? "seller"
+        : undefined;
     // Project access requires BOTH organization membership and explicit project membership.
     const organization = this.db
       .prepare(
@@ -84,6 +112,24 @@ export class SqliteIdentityStore implements IdentityStore {
       | undefined;
   }
   granted(userId: string, scope: Scope, now = Date.now()): boolean {
+    if (scope.kind === "market")
+      return scope.resourceId === "public" && scope.action !== "write";
+    if (scope.kind === "task") {
+      const row = this.db
+        .prepare("SELECT market FROM market_publications WHERE id=?")
+        .get(scope.resourceId);
+      if (!row) return false;
+      const participation = this.db
+        .prepare(
+          "SELECT revoked FROM market_participations WHERE requirement_id=? AND user_id=?"
+        )
+        .get(scope.resourceId, userId);
+      return (
+        participation?.revoked !== 1 &&
+        (Number(JSON.parse(String(row.market)).deadline) > now ||
+          !!participation)
+      );
+    }
     if (scope.kind === "dispute")
       return (
         scope.action === "read" &&

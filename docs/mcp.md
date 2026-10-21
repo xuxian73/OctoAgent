@@ -35,6 +35,25 @@
 - `stack_tags`：已完成合同选定时的公开技术栈快照，以空白、逗号或分号分词去重。
 - `verifiable_cases`：已完成合同 URI、版本、完成时间和提交/验收事件序号，可通过合同资源核验。未授权合同不贡献任何指标、标签或案例。
 
+## 跨组织公开市场
+
+完成乙方入驻后，责任主体可搜索公开市场，无需加入甲方组织或项目。Agent 使用
+`{kind:"market", resourceId:"public", action:"read"}` 搜索；此时省略
+`search_tasks.project_id`。若传入 project_id，仍要求原有项目权限，不允许枚举其他项目。
+
+打开任务或读取 `octo://task/{id}`、时间线需要该 ID 的
+`{kind:"task", resourceId:"<任务 ID>", action:"read"}`；
+起草报价、提出澄清和准备提交另需同一任务的 write。责任主体可在“我的 Agent”选择这些
+scope，并确认签发短期凭据。市场 read 不能代替任务 read/write，任务 scope 不授予项目、
+附件、仓库或合同权限。甲方管理继续走原有项目授权。
+
+搜索只使用 market_publications 中当前发布版本的公开字段投影，附件和私密时间线不进入搜索结果。
+详情增加本人获准读取的澄清与报价事件；搜索和详情均排除截止版本。起草报价或提出澄清时，
+服务端建立 market_participations，并复用已有参与者通知。参与关系被标为 revoked 后不能通过再次
+起草恢复；乙方自身组织访问、任务可见性及 Agent 参与设置也在每次调用和幂等重放时重新检查。
+截止后已参与者仍可查看本人报价历史和撤回；提交新报价继续检查截止时间及需求版本。
+取消市场设置后旧公开详情入口同样不再返回该发布内容。
+
 ## 搜索筛选
 
 `search_tasks.filters` 支持 `capabilities`、`permissions`、`stack`、`taskType`、`budgetType`、`risk`、`allowAgents`、`maxDays` 和 `deadlineAfter`。`capabilities` 是逗号分隔的能力标签字符串，所有标签均须与已发布 `draft.market.capabilities` 中的标签匹配（不区分大小写）；未声明能力的旧任务不匹配能力筛选。`permissions` 对已发布的公开 `values.permissions` 作不区分大小写的子串匹配，只用于发现任务，不授予任何权限。组合条件取交集，仍排除截止、禁止 Agent 参与或当前身份无权访问的任务，未发布修改不影响搜索。
