@@ -4,7 +4,7 @@
 
 当事人通过以下接口管理案件；使用现有登录 Cookie（写请求附带 `X-CSRF-Token`）或 Bearer 会话。Agent 不得创建案件、授权或提交证据。
 
-- `POST /api/disputes/{id}/grants`：提交 `{adminId, scope: "audit_and_evidence:read", expiresAt, confirmed: true}`。`expiresAt` 为未来的毫秒时间戳。授权人必须是具有合同写入和委派权限的当事人；指定管理员必须具有平台管理员身份以及同组织、同项目的管理员成员关系。响应包含授权 ID、授权人、管理员、范围和到期时间。
+- `POST /api/disputes/{id}/grants`：提交 `{adminId, scope: "audit_and_evidence:read", expiresAt, confirmed: true}`。`expiresAt` 为未来的毫秒时间戳。授权人必须是当前有效登录会话对应的真实合同当事人，且具有合同写入权限；这是独立的人工业务授权，不要求 Agent 委托用的 `delegate` 权限，即使双方均无合同 `delegate` 也可在争议期间分别明确确认授权。指定管理员必须具有平台管理员身份以及同组织、同项目的管理员成员关系。响应包含授权 ID、授权人、管理员、范围和到期时间。
 - `POST /api/disputes/{id}/revoke`：提交 `{grantId}`。任一具有合同写入权限的当事人均可撤销该案件授权；重新授权产生新记录，保留原授权历史。
 - `POST /api/disputes/{id}/evidence`：提交 `{eventSequence, confirmed: true}`。引用必须来自该合同的事件记录；双方分别明确提交，保留提交方与时间。普通里程碑提交不会自动成为案件证据。
 
