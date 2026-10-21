@@ -433,7 +433,7 @@ test("shared SHA submissions isolate milestone artifacts and enforce binding and
     assert.equal(
       (workspace.read(f.buyer, id).submissions[0] as { simulated: boolean })
         .simulated,
-      false
+      true // Real artifact bytes cannot upgrade simulated Git/check evidence.
     );
 
     assert.throws(

@@ -25,7 +25,9 @@
     "demo:seed": "npm run build && node dist/packages/demo/src/main.js",
     "test:e2e": "npm run build && node --test dist/tests/e2e.test.js",
     "account:create": "node --env-file-if-exists=.env dist/packages/database/src/create-account.js",
-    "scan:integration": "npm run build && node --env-file-if-exists=.env dist/packages/security/src/scan-integration.js"
+    "scan:integration": "npm run build && node --env-file-if-exists=.env dist/packages/security/src/scan-integration.js",
+    "check:worker": "node --env-file-if-exists=.env dist/packages/delivery/src/check-worker.js",
+    "check:integration": "npm run build && node --env-file-if-exists=.env dist/packages/delivery/src/check-integration.js"
   },
   "devDependencies": {
     "@types/node": "22.19.21",

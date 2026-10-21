@@ -110,7 +110,13 @@ export class Authorization {
   ): { identity: Identity; credential: Credential } {
     if (typeof token !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(token))
       return deny();
-    const credential = this.store.credential(tokenDigest(token));
+    return this.authenticateDigest(tokenDigest(token));
+  }
+
+  private authenticateDigest(
+    digest: string
+  ): { identity: Identity; credential: Credential } {
+    const credential = this.store.credential(digest);
     if (!credential || credential.revoked || credential.expiresAt <= this.now())
       return deny();
     if (credential.agentId) {
@@ -147,8 +153,18 @@ export class Authorization {
     scope: Scope,
     roles?: readonly Role[]
   ): { identity: Identity; resource: Resource; role: Role } {
+    this.authenticate(token);
+    return this.authorizeStoredCredential(tokenDigest(token), scope, roles);
+  }
+
+  /** Trusted worker boundary: digests are never accepted from API input. */
+  authorizeStoredCredential(
+    digest: string,
+    scope: Scope,
+    roles?: readonly Role[]
+  ) {
     if (!validScope(scope)) return deny();
-    const { identity, credential } = this.authenticate(token);
+    const { identity, credential } = this.authenticateDigest(digest);
     const resource = this.store.resource(scope.kind, scope.resourceId);
     if (
       !resource ||

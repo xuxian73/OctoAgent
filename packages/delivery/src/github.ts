@@ -158,6 +158,7 @@ export class FakeGitHubProvider implements GitHubProvider {
       sha,
       kind,
       passed,
+      simulated: true,
       log: `离线模拟 ${kind}: ${passed ? "PASS" : "FAIL"}（不执行仓库代码）`
     };
     state.checks.push(check);

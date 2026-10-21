@@ -262,12 +262,54 @@ const contractDetail = z.strictObject({
   ),
   events: z.array(timelineEvent.extend({ contract_id: id, version: integer }))
 });
-const check = z.strictObject({
+const historicalCheck = z.strictObject({
   sha: text,
   kind: z.enum(["test", "typecheck"]),
   passed: z.boolean(),
+  simulated: z.literal(true).optional(),
   log: z.string()
 });
+const check = z.union([
+  historicalCheck,
+  z.strictObject({
+    id: text,
+    sha: text,
+    kind: z.enum(["test", "typecheck"]),
+    version: integer,
+    status: z.enum([
+      "queued",
+      "running",
+      "succeeded",
+      "failed",
+      "timed_out",
+      "cancelled",
+      "unavailable"
+    ]),
+    passed: z.boolean(),
+    simulated: z.literal(false),
+    exitCode: integer.nullable(),
+    startedAt: integer.nullable(),
+    endedAt: integer.nullable(),
+    image: z.string(),
+    executor: z.string(),
+    command: z.array(z.string()),
+    log: z.string(),
+    truncated: z.boolean(),
+    cleanupPending: z.boolean().optional(),
+    isolation: z
+      .strictObject({
+        network: z.literal("none"),
+        readOnly: z.literal(true),
+        uid: z.literal(65534),
+        memoryBytes: integer,
+        cpus: z.number(),
+        pids: integer,
+        timeoutMs: integer,
+        outputBytes: integer
+      })
+      .optional()
+  })
+]);
 const pullRequest = z.strictObject({
   sha: text,
   url: z.url(),

@@ -308,6 +308,11 @@ test("buyer evidence page renders structured evidence and clears on contract cha
   const ids = [
     "git-controls",
     "git-init",
+    "check-form",
+    "check-sha",
+    "check-kind",
+    "cancel-check-form",
+    "cancel-check-id",
     "source-refresh",
     "branch-form",
     "import-form",
