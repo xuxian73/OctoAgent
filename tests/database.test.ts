@@ -61,7 +61,16 @@ test("main database upgrades preserve notifications and durable idempotent reads
       seed.exec("PRAGMA foreign_keys = ON");
       // Reproduce main's schema and migration ledger before notification reads.
       seed.exec(`DROP TABLE requirement_notification_reads;
-        DELETE FROM _migrations WHERE name = '0013_notification_reads.sql';`);
+        DELETE FROM _migrations WHERE name = '0014_notification_reads.sql';`);
+      assert.equal(
+        seed.prepare("SELECT count(*) AS n FROM _migrations").get()!.n,
+        13
+      );
+      assert.ok(
+        seed
+          .prepare("SELECT 1 FROM _migrations WHERE name = '0013_disputes.sql'")
+          .get()
+      );
       seedIdentities(seed);
       seed.exec(`INSERT INTO requirements VALUES
         ('task', 'project-a', 2, 2, '{}', '{"market":{"allowAgents":true}}', '[]');
