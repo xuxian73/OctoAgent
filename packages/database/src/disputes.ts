@@ -84,15 +84,7 @@ export class Disputes {
   grant(token: string, id: string, input: Record<string, unknown>) {
     const row = this.caseRow(id);
     const access = this.party(token, String(row.contract_id));
-    this.auth.authorize(
-      token,
-      {
-        kind: "contract",
-        resourceId: String(row.contract_id),
-        action: "delegate"
-      },
-      [access.role]
-    );
+    // Human case-view consent is independent of Agent delegation.
     const store = new SqliteIdentityStore(this.db);
     const adminId = typeof input.adminId === "string" ? input.adminId : "";
     if (
