@@ -28,9 +28,11 @@ test("fresh migration matches schema, is repeatable and detects tampering", () =
       .prepare("SELECT name FROM _migrations ORDER BY name")
       .all()
       .map(row => row.name);
-    // Preserve both disputes and notification-read migrations.
+    // Preserve migrations from both the base branch and private file storage.
     assert.ok(appliedMigrations.includes("0013_disputes.sql"));
     assert.ok(appliedMigrations.includes("0014_notification_reads.sql"));
+    assert.ok(appliedMigrations.includes("0015_private_files.sql"));
+    assert.ok(appliedMigrations.includes("0015_seller_profiles.sql"));
     assert.deepEqual(
       appliedMigrations,
       readdirSync("packages/database/migrations")
@@ -68,7 +70,9 @@ test("main database upgrades preserve notifications and durable idempotent reads
     try {
       seed.exec("PRAGMA foreign_keys = ON");
       // Reproduce main's schema and migration ledger before notification reads.
-      seed.exec(`DROP TABLE seller_profiles;
+      seed.exec(`DROP TABLE private_files;
+        DELETE FROM _migrations WHERE name = '0015_private_files.sql';
+        DROP TABLE seller_profiles;
         DELETE FROM _migrations WHERE name = '0015_seller_profiles.sql';
         DROP TABLE requirement_notification_reads;
         DELETE FROM _migrations WHERE name = '0014_notification_reads.sql';`);
@@ -115,7 +119,7 @@ test("main database upgrades preserve notifications and durable idempotent reads
       );
       assert.equal(
         inspection.prepare("SELECT count(*) AS n FROM _migrations").get()!.n,
-        15
+        16
       );
     } finally {
       inspection.close();

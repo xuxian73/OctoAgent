@@ -1,0 +1,174 @@
+import { sessionHeaders } from "./session.js";
+import { apiRequest } from "./client.js";
+export interface UploadBinding {
+  kind: "requirement" | "artifact";
+  resourceId: string;
+  version: number;
+  revision: number;
+  milestoneId: string;
+  sha: string;
+}
+const types: Record<string, string> = {
+  ts: "text/plain",
+  txt: "text/plain",
+  md: "text/markdown",
+  json: "application/json",
+  zip: "application/zip"
+};
+export function renderFiles() {
+  return `<section id="private-files"><h2>私有文件</h2><p>文件隔离保存；仅 clean 可下载。测试扫描明确标记模拟，不代表真实安全扫描。ZIP 不解包。每版本最多 20 个文件，每个最多 10 MiB。</p><input type="file" id="private-file" accept=".ts,.txt,.md,.json,.zip"><button id="file-upload" type="button">上传真实字节</button><button id="file-refresh" type="button">刷新文件状态</button><progress id="file-progress" max="100" value="0"></progress><p id="file-status" role="status"></p><ul id="file-list"></ul></section>`;
+}
+export function mountFiles(root: Document, binding: () => UploadBinding) {
+  if (!root.getElementById("private-files")) return;
+  const el = (id: string) => root.getElementById(id)!;
+  const status = el("file-status");
+  const progress = el("file-progress") as HTMLProgressElement;
+  let pending: { file: File; binding: string; key: string } | undefined;
+  let active: XMLHttpRequest | undefined;
+  let generation = 0;
+  let retired = false;
+  const clear = () => {
+    generation++;
+    active?.abort();
+    pending = undefined;
+    el("file-list").replaceChildren();
+    progress.value = 0;
+    status.textContent = "";
+  };
+  root.addEventListener("session-ended", () => {
+    retired = true;
+    clear();
+  });
+  root.addEventListener("input", event => {
+    if (
+      ["contract", "draft-id", "file-milestone", "file-sha"].includes(
+        (event.target as HTMLElement).id
+      )
+    )
+      clear();
+  });
+  async function refresh() {
+    const current = generation;
+    const b = binding();
+    const files = await apiRequest(
+      `/api/files?kind=${b.kind}&resourceId=${encodeURIComponent(b.resourceId)}`
+    );
+    if (retired || current !== generation) return;
+    el("file-list").replaceChildren();
+    for (const file of files) {
+      const li = root.createElement("li");
+      li.textContent = `${file.name} · ${file.size} 字节 · SHA-256 ${
+        file.checksum
+      } · ${file.scan_status}${file.simulated ? "（模拟扫描）" : ""} `;
+      if (file.scan_status === "clean") {
+        const button = root.createElement("button");
+        button.textContent = "下载";
+        button.onclick = () =>
+          void run(async () => {
+            if (active || retired) return;
+            const current = generation;
+            const headers = await sessionHeaders();
+            if (retired || current !== generation) return;
+            progress.value = 0;
+            status.textContent = "正在下载";
+            const blob = await new Promise<Blob>((resolve, reject) => {
+              const xhr = (active = new XMLHttpRequest());
+              xhr.open("GET", `/api/files/${file.id}/download`);
+              xhr.responseType = "blob";
+              for (const [key, value] of Object.entries(headers))
+                xhr.setRequestHeader(key, value);
+              xhr.onprogress = e => {
+                if (e.lengthComputable)
+                  progress.value = (e.loaded / e.total) * 100;
+              };
+              xhr.onload = () => {
+                active = undefined;
+                if (xhr.status === 200) resolve(xhr.response);
+                else reject(new Error("下载被阻止，请刷新状态并检查权限"));
+              };
+              xhr.onerror = xhr.onabort = () => {
+                active = undefined;
+                reject(new Error("下载中断"));
+              };
+              xhr.send();
+            });
+            if (retired || current !== generation) return;
+            const url = URL.createObjectURL(blob);
+            const link = root.createElement("a");
+            link.href = url;
+            link.download = file.name;
+            link.click();
+            URL.revokeObjectURL(url);
+            status.textContent = "下载完成";
+          });
+        li.append(button);
+      } else li.append("阻塞：尚未通过扫描，不能下载或用于交付");
+      el("file-list").append(li);
+    }
+  }
+  async function run(work: () => Promise<void>) {
+    try {
+      if (retired) return;
+      await work();
+    } catch (error) {
+      status.textContent =
+        error instanceof Error ? error.message : "文件操作失败";
+    }
+  }
+  el("file-refresh").onclick = () => void run(refresh);
+  el("file-upload").onclick = () =>
+    void run(async () => {
+      if (active || retired) return;
+      const current = generation;
+      const file = (el("private-file") as HTMLInputElement).files?.[0];
+      if (!file) throw new Error("请选择文件");
+      const b = binding();
+      const encoded = JSON.stringify(b);
+      if (!pending || pending.file !== file || pending.binding !== encoded)
+        pending = { file, binding: encoded, key: crypto.randomUUID() };
+      const headers = await sessionHeaders();
+      if (retired || current !== generation || active) return;
+      progress.value = 0;
+      status.textContent = "正在上传";
+      await new Promise<void>((resolve, reject) => {
+        const xhr = (active = new XMLHttpRequest());
+        xhr.open("POST", "/api/files");
+        for (const [key, value] of Object.entries(headers))
+          xhr.setRequestHeader(key, value);
+        xhr.setRequestHeader("Content-Type", "application/octet-stream");
+        xhr.setRequestHeader(
+          "X-File-Metadata",
+          encodeURIComponent(
+            JSON.stringify({
+              ...b,
+              name: file.name,
+              mime:
+                types[
+                  file.name
+                    .split(".")
+                    .pop()!
+                    .toLowerCase()
+                ] || "",
+              requestKey: pending!.key
+            })
+          )
+        );
+        xhr.upload.onprogress = e => {
+          if (e.lengthComputable) progress.value = (e.loaded / e.total) * 100;
+        };
+        xhr.onload = () => {
+          active = undefined;
+          if (xhr.status >= 200 && xhr.status < 300) resolve();
+          else reject(new Error("上传失败：" + xhr.responseText));
+        };
+        xhr.onerror = xhr.onabort = () => {
+          active = undefined;
+          reject(new Error("上传中断，可重试同一文件"));
+        };
+        xhr.send(file);
+      });
+      if (retired || current !== generation) return;
+      status.textContent = "字节已保存；隔离中，等待扫描";
+      await refresh();
+    });
+}

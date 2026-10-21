@@ -104,7 +104,7 @@ export class Requirements {
       validation: validate(draft),
       attachments: this.db
         .prepare(
-          "SELECT id, name, mime, size, private FROM requirement_attachments WHERE requirement_id = ?"
+          "SELECT id, name, mime, size, private, 0 AS hasBytes, 'legacy_metadata_only' AS scan_status FROM requirement_attachments WHERE requirement_id = ?"
         )
         .all(id),
       changes: this.db
@@ -305,7 +305,7 @@ export class Requirements {
     this.row(token, id);
     const value = this.db
       .prepare(
-        "SELECT id, name, mime, size, private FROM requirement_attachments WHERE id = ? AND requirement_id = ?"
+        "SELECT id, name, mime, size, private, 0 AS hasBytes, 'legacy_metadata_only' AS scan_status FROM requirement_attachments WHERE id = ? AND requirement_id = ?"
       )
       .get(attachmentId, id);
     if (!value) throw new ForbiddenError();
