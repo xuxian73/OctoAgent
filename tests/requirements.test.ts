@@ -15,6 +15,7 @@ import {
 import {
   Draft,
   fields,
+  contextFields,
   taskTypes,
   budgetTypes,
   parseDraft,
@@ -584,7 +585,12 @@ test("editor saves, reloads and publishes through HTTP; editing invalidates visi
     "attachment",
     "attachment-public",
     "attachments",
-    "changes"
+    "changes",
+    "market-enabled",
+    "market-deadline",
+    "market-days",
+    "market-risk",
+    "market-agents"
   ])
     elements.set(id, new Element());
   const publicBoxes = Object.keys(fields).map(key => {
@@ -650,14 +656,26 @@ test("editor saves, reloads and publishes through HTTP; editing invalidates visi
     assert.equal(elements.get("changes")!.children.length, 1);
     // Preserve every field and both directions of public-flag edits, including
     // edits made while the attachment request is still pending.
-    publicBoxes[0]!.checked = true;
+    publicBoxes.find(
+      box => box.dataset.public === "repository"
+    )!.checked = true;
     await dispatch("requirement-form", "submit");
     for (const initialState of ["saved", "loaded"]) {
       if (initialState === "loaded") await dispatch("load");
       const before = f.service.read(f.token, id);
       for (const key of Object.keys(fields))
         elements.get(key)!.value = `待保存-${key}`;
-      publicBoxes.forEach(box => (box.checked = !box.checked));
+      elements.get("market-enabled")!.checked = true;
+      elements.get("market-deadline")!.value = "2030-01-01T12:00";
+      elements.get("market-days")!.value = "14";
+      elements.get("market-risk")!.value = "high";
+      elements.get("market-agents")!.checked = true;
+      publicBoxes.forEach(
+        box =>
+          (box.checked =
+            contextFields.some(key => key === box.dataset.public) ||
+            !box.checked)
+      );
       const expectedPublic = publicBoxes
         .filter(box => box.checked)
         .map(box => box.dataset.public);
@@ -670,6 +688,7 @@ test("editor saves, reloads and publishes through HTTP; editing invalidates visi
       });
       await dispatch("add-attachment");
       elements.get("goal")!.value = "请求期间继续编辑";
+      elements.get("market-days")!.value = "21";
       release();
       for (let i = 0; i < 5; i++)
         await new Promise<void>(resolve => setImmediate(resolve));
@@ -682,6 +701,11 @@ test("editor saves, reloads and publishes through HTTP; editing invalidates visi
         publicBoxes.filter(box => box.checked).map(box => box.dataset.public),
         expectedPublic
       );
+      assert.equal(elements.get("market-enabled")!.checked, true);
+      assert.equal(elements.get("market-deadline")!.value, "2030-01-01T12:00");
+      assert.equal(elements.get("market-days")!.value, "21");
+      assert.equal(elements.get("market-risk")!.value, "high");
+      assert.equal(elements.get("market-agents")!.checked, true);
       assert.deepEqual(f.service.read(f.token, id).draft, before.draft);
       assert.equal(
         elements.get("attachments")!.children.length,
@@ -696,6 +720,12 @@ test("editor saves, reloads and publishes through HTTP; editing invalidates visi
       const saved = f.service.read(f.token, id);
       assert.equal(saved.revision, before.revision + 2);
       assert.equal(saved.draft.values.goal, "请求期间继续编辑");
+      assert.deepEqual(saved.draft.market, {
+        deadline: new Date("2030-01-01T12:00").getTime(),
+        durationDays: 21,
+        risk: "high",
+        allowAgents: true
+      });
       assert.deepEqual(saved.draft.publicFields, expectedPublic);
     }
     // A second session changes both budget and visibility before attachment
@@ -704,6 +734,7 @@ test("editor saves, reloads and publishes through HTTP; editing invalidates visi
     for (const timing of ["before", "after-commit"]) {
       await dispatch("load");
       const before = f.service.read(f.token, id);
+      elements.get("market-enabled")!.checked = false;
       elements.get("amount")!.value = "150.00";
       publicBoxes.forEach(box => (box.checked = box.dataset.public === "goal"));
       const remote = complete();

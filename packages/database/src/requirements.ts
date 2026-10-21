@@ -154,6 +154,8 @@ export class Requirements {
       ).filter(
         key => previous?.values[key as Field] !== draft.values[key as Field]
       );
+      if (JSON.stringify(previous?.market) !== JSON.stringify(draft.market))
+        changed.push("market");
       if (
         JSON.stringify(previous?.publicFields) !==
         JSON.stringify(draft.publicFields)

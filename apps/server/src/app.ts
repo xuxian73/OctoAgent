@@ -1,3 +1,6 @@
+import { Market } from "../../../packages/database/src/market.js";
+import { marketRoute } from "./market.js";
+import { renderMarket } from "../../web/src/market.js";
 import { Requirements } from "../../../packages/database/src/requirements.js";
 import { requirementRoute } from "./requirements.js";
 import { renderRequirementEditor } from "../../web/src/requirements.js";
@@ -31,13 +34,24 @@ export function handleRequest(
   request: IncomingMessage,
   response: ServerResponse,
   authorization?: Authorization,
-  requirements?: Requirements
+  requirements?: Requirements,
+  market?: Market
 ): void {
   const requestId = randomUUID();
   response.setHeader("X-Request-Id", requestId);
   response.setHeader("X-Content-Type-Options", "nosniff");
   try {
     const path = new URL(request.url || "/", "http://localhost").pathname;
+    if (path === "/api/market" || path.startsWith("/api/market/")) {
+      void marketRoute(request, response, requestId, market);
+      return;
+    }
+    if (path === "/market" && request.method === "GET") {
+      response.setHeader("Content-Type", "text/html; charset=utf-8");
+      response.setHeader("Cache-Control", "no-store");
+      response.end(renderMarket());
+      return;
+    }
     if (path === "/api/requirements" || path.startsWith("/api/requirements/")) {
       void requirementRoute(request, response, requestId, requirements);
       return;
@@ -129,6 +143,14 @@ export function handleRequest(
       return;
     }
     const assets: Record<string, [string, string]> = {
+      "/market.js": [
+        "dist/apps/web/src/market.js",
+        "text/javascript; charset=utf-8"
+      ],
+      "/packages/requirements/src/bids.js": [
+        "dist/packages/requirements/src/bids.js",
+        "text/javascript; charset=utf-8"
+      ],
       "/requirements.js": [
         "dist/apps/web/src/requirements.js",
         "text/javascript; charset=utf-8"

@@ -117,3 +117,12 @@ API（JSON 请求，除 public 外均要求唯一 Bearer 请求头）：
 | `/api/requirements/{id}/attachments/{attachmentId}` | GET       | 授权读取元数据                                            |
 
 `tests/requirements.test.ts` 离线覆盖字段/枚举、确认与重放、过期与身份绑定、两连接并发、通知事务回滚、重开数据库、附件边界、租户权限与 HTTP 输入校验。服务端不记录请求体、附件名称或内部异常原文。
+
+### 需求发现与报价（issue #5）
+
+- `/requirements` 中启用发现设置，填写报价截止时间、周期、风险与 Agent 开关，并明确公开必要的任务上下文字段；设置随人工确认的发布版本生效。旧需求默认不进入发现列表。
+- `/market` 使用当前会话与授权项目 ID 搜索需求、起草报价、确认提交、撤回、补充说明、比较与澄清。沿用项目成员身份和精确资源授权，平台管理员不获得默认读取权；Agent 还需对应项目 read/write scope。
+- 每次保存报价创建不可变的新版本。责任人查看摘要后获得十分钟有效的确认凭据，提交绑定报价及需求版本；同一确认重试不会重复创建事件。Agent 可起草和撤回，承诺报价由责任人本人确认提交。
+- 比较只取每位责任人最新的非草稿版本；撤回最新版本不会自动恢复旧报价。默认按风险、周期排序，可切换周期、能力标签数量或价格；能力标签为报价方自述，不是平台评级。历史报价保留所引用的需求版本，需求重新发布后应重新报价。
+- 定向问题仅甲方与指定报价方可见；全部报价方问题对已提交报价的参与者可见。回答和补充说明仅甲方与对应责任人可见。时间线以时间、事件序号稳定排序，澄清不修改需求范围。
+- API 前缀 `/api/market`：GET 列表（`projectId`、`stack`、`taskType`、`budgetType`、`maxDays`、`deadlineAfter`、`risk`、`allowAgents`），GET `/:taskId`、`/:taskId/bids`、`/:taskId/compare`、`/:taskId/timeline`；POST `/:taskId/bids`、`/:taskId/questions`、`/:taskId/answers` 和 `/bids/:bidId/{preview,submit,withdraw,supplements}`。请求体为 JSON，凭据仅通过 Authorization header 传递。
