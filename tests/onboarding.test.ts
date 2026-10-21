@@ -14,7 +14,8 @@ import { Workspaces } from "../packages/database/src/workspaces.js";
 import {
   renderOnboarding,
   mountOnboarding,
-  mountProjectContext
+  mountProjectContext,
+  mountSeller
 } from "../apps/web/src/onboarding.js";
 
 function fixture() {
@@ -500,9 +501,21 @@ test("first-use idempotency and eligibility survive database reopen across conne
       requestContext(undefined, "durable-key"),
       () => database.onboarding(auth).create(token, body)
     );
+    database.onboarding(auth).create(token, sellerInput);
+    database
+      .onboarding(auth)
+      .updateSeller(token, { ...sellerInput, bio: "持久化编辑" });
     database.close();
     database = openDatabase(url);
     auth = new Authorization(database.identities);
+    assert.equal(
+      database.onboarding(auth).list(token).sellerProfile!.bio,
+      "持久化编辑"
+    );
+    assert.equal(
+      database.onboarding(auth).list(token).sellerProfile!.status,
+      "completed"
+    );
     const secondConnection = openDatabase(url);
     try {
       const secondAuth = new Authorization(secondConnection.identities);
@@ -576,5 +589,257 @@ test("real shell follows authorized projects and pages; forged context and revok
     );
   } finally {
     f.db.close();
+  }
+});
+
+const sellerInput = {
+  role: "seller",
+  displayName: "合成交付方",
+  capabilities: "TypeScript, SQLite",
+  taskTypes: "Bug 修复、部署",
+  bio: "提供可验证的软件交付"
+};
+
+test("seller onboarding is isolated, retryable, editable and preserves buyer authorization", async () => {
+  const f = fixture();
+  try {
+    const buyer = (await f.create()).body.data;
+    const other = f.auth.issueUserSession("other-user");
+    const created = await f.create("seller-key", sellerInput, other);
+    assert.equal(created.status, 200);
+    assert.deepEqual(
+      (await f.create("seller-key", sellerInput, other)).body.data,
+      created.body.data
+    );
+    assert.equal(
+      (await f.create("new-seller-key", sellerInput, other)).status,
+      409
+    );
+    const contexts = f.service.list(other);
+    assert.deepEqual(contexts.businessRoles, ["seller"]);
+    assert.equal(contexts.projects.length, 0);
+    assert.equal(contexts.organizations.length, 1);
+    assert.notEqual(contexts.organizations[0]!.id, buyer.organizationId);
+    for (const action of ["read", "write", "delegate"] as const)
+      assert.throws(() =>
+        f.auth.authorize(other, {
+          kind: "project",
+          resourceId: buyer.projectId,
+          action
+        })
+      );
+    assert.equal(
+      (await f.call("/market", "GET", undefined, other)).status,
+      200
+    );
+    assert.equal(
+      (await f.call("/console", "GET", undefined, other)).status,
+      200
+    );
+    assert.equal(
+      (
+        await f.call(
+          "/market?project=" + buyer.projectId,
+          "GET",
+          undefined,
+          other
+        )
+      ).status,
+      403
+    );
+    for (const extra of [
+      { role: "admin" },
+      { userId: "new-user" },
+      { organizationId: buyer.organizationId },
+      { projectId: buyer.projectId },
+      { status: "completed" }
+    ]) {
+      assert.equal(
+        (
+          await f.call(
+            "/api/onboarding/seller",
+            "PUT",
+            { ...sellerInput, ...extra },
+            other
+          )
+        ).status,
+        400
+      );
+      assert.equal(
+        (await f.create("bad-key", { ...sellerInput, ...extra }, other)).status,
+        400
+      );
+    }
+    assert.equal(
+      (
+        await f.call(
+          "/api/onboarding/seller",
+          "PUT",
+          { ...sellerInput, displayName: "<交付方>" },
+          other
+        )
+      ).status,
+      200
+    );
+    assert.equal(f.service.list(other).sellerProfile!.displayName, "<交付方>");
+    assert.match(
+      (await f.call("/onboarding", "GET", undefined, other)).body,
+      /&lt;交付方&gt;/
+    );
+    const before = f.db
+      .prepare("SELECT * FROM memberships WHERE user_id='new-user'")
+      .all();
+    const grants = f.db
+      .prepare("SELECT * FROM resource_grants WHERE user_id='new-user'")
+      .all();
+    assert.equal((await f.create("dual-key", sellerInput)).status, 200);
+    assert.deepEqual(f.service.list(f.token).businessRoles, [
+      "buyer",
+      "seller"
+    ]);
+    assert.deepEqual(
+      f.db.prepare("SELECT * FROM memberships WHERE user_id='new-user'").all(),
+      before
+    );
+    assert.deepEqual(
+      f.db
+        .prepare("SELECT * FROM resource_grants WHERE user_id='new-user'")
+        .all(),
+      grants
+    );
+    assert.equal(
+      (await f.call("/requirements?project=" + buyer.projectId)).status,
+      200
+    );
+    assert.equal((await f.call("/market")).status, 200);
+    // A seller can subsequently use the existing buyer initialization flow.
+    assert.equal(
+      (await f.create("seller-becomes-buyer", f.body, other)).status,
+      200
+    );
+    assert.deepEqual(f.service.list(other).businessRoles, ["buyer", "seller"]);
+  } finally {
+    f.db.close();
+  }
+});
+
+test("seller audit failure rolls back every resource and allows retry", async () => {
+  for (const event of [
+    "membership.created",
+    "permission.granted",
+    "Onboarding.create"
+  ]) {
+    const f = fixture();
+    try {
+      f.db.exec(
+        `CREATE TRIGGER fail_seller BEFORE INSERT ON audit_events WHEN NEW.event='${event}' AND NEW.result='success' BEGIN SELECT RAISE(ABORT,'synthetic failure'); END`
+      );
+      assert.equal((await f.create("seller-key", sellerInput)).status, 500);
+      for (const table of [
+        "seller_profiles",
+        "organizations",
+        "projects",
+        "memberships",
+        "resource_grants",
+        "authorization_resources",
+        "business_requests"
+      ])
+        assert.equal(
+          f.db.prepare(`SELECT count(*) n FROM ${table}`).get()!.n,
+          0
+        );
+      f.db.exec("DROP TRIGGER fail_seller");
+      assert.equal((await f.create("seller-key", sellerInput)).status, 200);
+      assert.equal((await f.create("seller-key", sellerInput)).status, 200);
+      assert.equal(
+        f.db.prepare("SELECT count(*) n FROM organizations").get()!.n,
+        1
+      );
+      f.db.exec("DELETE FROM resource_grants WHERE user_id='new-user'");
+      assert.equal((await f.create("seller-key", sellerInput)).status, 403);
+      assert.equal(
+        (await f.call("/api/onboarding/seller", "PUT", sellerInput)).status,
+        403
+      );
+    } finally {
+      f.db.close();
+    }
+  }
+});
+
+test("seller form retries creation with the same key and saves edits without a project", async () => {
+  class Element extends EventTarget {
+    value = "合成资料";
+    textContent = "";
+    disabled = false;
+    dataset = { editing: "false" };
+  }
+  const elements = new Map(
+    [
+      "seller-form",
+      "save-seller",
+      "seller-status",
+      ...["displayName", "capabilities", "taskTypes", "bio"].map(
+        key => "seller-" + key
+      )
+    ].map(id => [id, new Element()])
+  );
+  const root = ({
+    getElementById: (id: string) => elements.get(id)
+  } as unknown) as Document;
+  const originalFetch = globalThis.fetch;
+  const previousLocation = Object.getOwnPropertyDescriptor(
+    globalThis,
+    "location"
+  );
+  const destinations: string[] = [];
+  Object.defineProperty(globalThis, "location", {
+    configurable: true,
+    value: { assign: (url: string) => destinations.push(url) }
+  });
+  const submissions: { url: string; options: RequestInit }[] = [];
+  globalThis.fetch = (async (url: string, options?: RequestInit) => {
+    if (url === "/api/auth/me")
+      return {
+        ok: true,
+        json: async () => ({ data: { csrf: "synthetic-csrf" } })
+      };
+    submissions.push({ url, options: options! });
+    if (submissions.length === 1) throw new Error("synthetic disconnect");
+    return { json: async () => ({ ok: true }) };
+  }) as typeof fetch;
+  try {
+    mountSeller(root);
+    const submit = async () => {
+      elements
+        .get("seller-form")!
+        .dispatchEvent(new Event("submit", { cancelable: true }));
+      await new Promise(resolve => setImmediate(resolve));
+    };
+    await submit();
+    assert.match(elements.get("seller-status")!.textContent, /保存未完成/);
+    await submit();
+    assert.equal(
+      (submissions[0]!.options.headers as Record<string, string>)[
+        "Idempotency-Key"
+      ],
+      (submissions[1]!.options.headers as Record<string, string>)[
+        "Idempotency-Key"
+      ]
+    );
+    assert.deepEqual(destinations, ["/market"]);
+    elements.get("seller-form")!.dataset.editing = "true";
+    await submit();
+    assert.equal(submissions[2]!.url, "/api/onboarding/seller");
+    assert.equal(submissions[2]!.options.method, "PUT");
+    assert.deepEqual(
+      Object.keys(JSON.parse(submissions[2]!.options.body as string)).sort(),
+      ["bio", "capabilities", "displayName", "role", "taskTypes"]
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (previousLocation)
+      Object.defineProperty(globalThis, "location", previousLocation);
+    else Reflect.deleteProperty(globalThis, "location");
   }
 });
