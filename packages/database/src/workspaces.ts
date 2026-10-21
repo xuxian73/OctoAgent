@@ -1,3 +1,4 @@
+import { LocalGitProvider } from "../../delivery/src/local-git.js";
 import { Files } from "./files.js";
 import { audited } from "./security.js";
 import { DatabaseSync } from "node:sqlite";
@@ -6,7 +7,6 @@ import { RequirementError } from "../../requirements/src/model.js";
 import { Contracts } from "./contracts.js";
 import {
   checksum,
-  FakeGitHubProvider,
   GitHubProvider,
   permissions,
   Permission,
@@ -18,7 +18,8 @@ export class Workspaces {
     private db: DatabaseSync,
     private auth: Authorization,
     private now = Date.now,
-    private provider: GitHubProvider = new FakeGitHubProvider()
+    private provider?: GitHubProvider,
+    private localGit = new LocalGitProvider()
   ) {
     return audited(
       this,
@@ -56,6 +57,11 @@ export class Workspaces {
       }
     );
   }
+  private simulation() {
+    if (!this.provider)
+      throw new RequirementError("LOCAL_GIT_OPERATION_UNAVAILABLE", 409);
+    return this.provider;
+  }
   private access(token: string, id: string, write = false) {
     const contract = new Contracts(this.db, this.auth, this.now).read(
       token,
@@ -79,6 +85,7 @@ export class Workspaces {
   }
   read(token: string, id: string) {
     const { contract, access, row, state } = this.access(token, id);
+    if (state.localGit) this.localGit.verify(id, state);
     return {
       party: access.role,
       actors: [
@@ -98,10 +105,22 @@ export class Workspaces {
         )
         .all(id, id),
       contractId: id,
+      milestones: contract.milestones,
       version: contract.version,
       status: contract.status,
       taskVersion: row.task_version,
-      provider: "offline-fake",
+      provider: this.provider
+        ? "offline-fake"
+        : state.localGit
+        ? "real-local-git"
+        : state.commits.length || Object.keys(state.branches).length
+        ? "legacy-simulation"
+        : "local-uninitialized",
+      codeArtifacts: this.db
+        .prepare(
+          "SELECT id,name,checksum FROM private_files WHERE kind='artifact' AND resource_id=? AND version=? AND mime <> 'application/zip' AND scan_status='clean' AND simulated=0 AND scan_checksum=checksum AND scanned_at IS NOT NULL"
+        )
+        .all(id, contract.version),
       ...state,
       auditEventReferences: contract.events
         .filter(e => String(e.kind).startsWith("workspace_"))
@@ -117,7 +136,7 @@ export class Workspaces {
       )
       .all(id, access.identity.id, this.now())
       .map(row => String(row.permission));
-    this.provider.authorize(permission, grants);
+    if (!grants.includes(permission)) throw new ForbiddenError();
     if (contract.status !== "active")
       throw new RequirementError("CONTRACT_NOT_ACTIVE", 409);
     return this.read(token, id);
@@ -137,6 +156,7 @@ export class Workspaces {
       const key = text(input.requestKey);
       const sensitive = ["deploy", "migrate", "delete", "expand_permissions"];
       const required: Record<string, Permission> = {
+        initialize_repository: "branch",
         create_workspace_branch: "branch",
         commit: "commit",
         run_check: "check",
@@ -163,10 +183,11 @@ export class Workspaces {
             )
             .all(id, access.identity.id, this.now())
             .map(r => String(r.permission));
-          this.provider.authorize(required[action]!, grants);
+          if (!grants.includes(required[action]!)) throw new ForbiddenError();
         }
       }
       const fingerprint = checksum(JSON.stringify(input));
+      if (state.localGit) this.localGit.verify(id, state);
       const prior = this.db
         .prepare(
           "SELECT * FROM delivery_requests WHERE contract_id = ? AND actor_id = ? AND request_key = ?"
@@ -194,7 +215,44 @@ export class Workspaces {
         return previous;
       }
       let result: unknown;
-      if (action === "authorize") {
+      if (
+        !this.provider &&
+        ["initialize_repository", "create_workspace_branch", "commit"].includes(
+          action
+        )
+      ) {
+        let file;
+        if (action === "commit") {
+          const downloaded = new Files(this.db, this.auth).download(
+            token,
+            text(input.fileId)
+          );
+          const meta = downloaded.metadata;
+          if (
+            meta.kind !== "artifact" ||
+            meta.resource_id !== id ||
+            meta.version !== contract.version ||
+            meta.mime === "application/zip"
+          )
+            throw new RequirementError("ARTIFACT_BINDING_MISMATCH", 409);
+          file = {
+            path: text(input.targetPath),
+            bytes: downloaded.bytes,
+            id: String(meta.id),
+            checksum: String(meta.checksum)
+          };
+        }
+        result = this.localGit.operate(
+          id,
+          state,
+          checksum(JSON.stringify([access.identity.id, key, fingerprint])),
+          action,
+          action === "initialize_repository" ? "main" : text(input.branch),
+          action === "commit" ? text(input.summary) : "",
+          contract.version,
+          file
+        );
+      } else if (action === "authorize") {
         const actor = text(input.actorId);
         const permission = text(input.permission);
         if (
@@ -249,9 +307,9 @@ export class Workspaces {
         };
         state.deployments.push(result);
       } else if (action === "create_workspace_branch")
-        result = this.provider.createBranch(state, text(input.branch));
+        result = this.provider!.createBranch(state, text(input.branch));
       else if (action === "commit")
-        result = this.provider.commit(
+        result = this.provider!.commit(
           state,
           text(input.branch),
           input.files as Record<string, string>,
@@ -259,13 +317,13 @@ export class Workspaces {
           contract.version
         );
       else if (action === "run_check")
-        result = this.provider.runCheck(
+        result = this.simulation().runCheck(
           state,
           text(input.sha),
           text(input.kind)
         );
       else if (action === "create_pull_request")
-        result = this.provider.createPullRequest(state, text(input.sha));
+        result = this.simulation().createPullRequest(state, text(input.sha));
       else if (action === "upload_artifact" && input.fileId) {
         const fileId = text(input.fileId);
         const { metadata: file } = new Files(this.db, this.auth).download(
@@ -293,7 +351,7 @@ export class Workspaces {
         state.artifacts.push(artifact);
         result = artifact;
       } else if (action === "upload_artifact")
-        result = this.provider.uploadArtifact(
+        result = this.simulation().uploadArtifact(
           state,
           text(input.sha),
           text(input.name),

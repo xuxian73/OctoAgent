@@ -1,3 +1,4 @@
+import { FakeGitHubProvider } from "../packages/delivery/src/github.js";
 import { FakeScanner } from "../packages/security/src/index.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -300,7 +301,12 @@ test("shared SHA submissions isolate milestone artifacts and enforce binding and
   const f = setup();
   f.activate();
   const id = f.current().id;
-  const workspace = new Workspaces(f.db, f.auth);
+  const workspace = new Workspaces(
+    f.db,
+    f.auth,
+    Date.now,
+    new FakeGitHubProvider()
+  );
   const command = (action: string, extra: Record<string, unknown>) =>
     workspace.command(f.seller, id, {
       version: 1,

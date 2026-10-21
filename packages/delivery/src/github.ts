@@ -13,6 +13,7 @@ export const permissions = [
 ] as const;
 export type Permission = typeof permissions[number];
 export interface RepositoryState {
+  localGit?: { generation: string };
   branches: Record<string, string>;
   commits: {
     sha: string;
@@ -20,6 +21,8 @@ export interface RepositoryState {
     summary: string;
     version: number;
     files: Record<string, string>;
+    diff?: string;
+    source?: { fileId: string; checksum: string; path: string };
   }[];
   checks: { sha: string; kind: string; passed: boolean; log: string }[];
   pullRequests: { sha: string; url: string; summary: string }[];
@@ -69,7 +72,7 @@ export function safePath(value: unknown): string {
     throw new RequirementError("INVALID_PATH");
   return path;
 }
-export const checksum = (value: string) =>
+export const checksum = (value: string | Uint8Array) =>
   createHash("sha256")
     .update(value)
     .digest("hex");
