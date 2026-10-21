@@ -73,7 +73,7 @@ test("console is anonymous and preview contains only synthetic context", () => {
   assert.match(request("/preview?state=unknown").body, /尚无交付记录/);
 });
 
-test("styles are explicitly served and business routes remain unavailable", () => {
+test("styles are served and contract API requires authorization", () => {
   for (const asset of ["/tokens.css", "/app.css"]) {
     assert.equal(
       request(asset).headers.get("Content-Type"),
@@ -81,7 +81,7 @@ test("styles are explicitly served and business routes remain unavailable", () =
     );
   }
   assert.equal(request("/preview/requirements", "POST").status, 404);
-  assert.equal(request("/api/contracts").status, 404);
+  assert.equal(request("/api/contracts").status, 403);
 });
 
 test("requirement editor and its browser dependency are explicitly served", () => {
@@ -92,4 +92,10 @@ test("requirement editor and its browser dependency are explicitly served", () =
     /taskTypes/
   );
   assert.equal(request("/api/requirements-other").status, 404);
+});
+
+test("contract console and browser module are explicitly served", () => {
+  assert.match(request("/contracts").body, /人工确认本次操作/);
+  assert.match(request("/contracts.js").body, /mountContracts/);
+  assert.equal(request("/api/contracts-other").status, 404);
 });

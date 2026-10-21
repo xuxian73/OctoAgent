@@ -15,7 +15,8 @@ const server = createServer((request, response) =>
     response,
     authorization,
     database.requirements(authorization),
-    database.market(authorization)
+    database.market(authorization),
+    database.contracts(authorization)
   )
 );
 server.on("close", () => database.close());
