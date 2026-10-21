@@ -84,7 +84,20 @@ async function fixture() {
     expiresAt: 900000
   };
   const refs = new Map([["main", "a".repeat(40)]]);
-  const commits = new Map<string, any>();
+  const baseTree = {
+    sha: "c".repeat(40),
+    truncated: false,
+    tree: [] as { path: string; type: string }[]
+  };
+  const commits = new Map<string, any>([
+    [
+      "a".repeat(40),
+      {
+        sha: "a".repeat(40),
+        tree: { sha: baseTree.sha }
+      }
+    ]
+  ]);
   const pulls: any[] = [];
   const seen: { method: string; path: string; body: any }[] = [];
   let bad = "";
@@ -132,6 +145,7 @@ async function fixture() {
         201
       );
     }
+    if (path === `/git/trees/${baseTree.sha}`) return reply(baseTree);
     if (path === "/git/trees") {
       assert.deepEqual(
         body.tree,
@@ -287,15 +301,19 @@ async function fixture() {
       sha: commit.sha,
       ...extra
     });
-  const connect = (scopes: string[] = ["read", "write", "create_pr"]) =>
-    command(
-      "connect",
-      { profileId: "test", scopes, confirmed: true, ttlMs: 900000 },
-      f.buyer
-    );
+  const prepare = async (scopes?: string[]) => {
+    const fields = { profileId: "test", scopes, ttlMs: 900000 };
+    const plan = await command("prepare_connect", fields, f.buyer);
+    assert.ok("confirmationId" in plan);
+    return { ...fields, confirmed: true, confirmationId: plan.confirmationId };
+  };
+  const connect = async (scopes: string[] = ["read", "write", "create_pr"]) =>
+    command("connect", await prepare(scopes), f.buyer);
   return {
     ...f,
     workspaces,
+    prepare,
+    baseTree,
     id,
     root,
     commit,
@@ -386,11 +404,7 @@ test("default read, independent scope ceilings, party/grants, expiry, revocation
       }),
       ForbiddenError
     );
-    await f.command(
-      "connect",
-      { profileId: "test", confirmed: true, ttlMs: 900000 },
-      f.buyer
-    );
+    await f.command("connect", await f.prepare(), f.buyer);
     for (const action of ["sync", "create_pr"])
       await assert.rejects(f.command(action), ForbiddenError);
     for (const action of ["merge", "deploy"])
@@ -591,11 +605,22 @@ test("browser entry confirms read-only by default, offers independent PR actions
       new Event("submit", { cancelable: true })
     );
     await settle();
+    assert.equal(el("github-confirm").checked, false);
+    el("github-confirm").checked = true;
+    el("github-connect").dispatchEvent(
+      new Event("submit", { cancelable: true })
+    );
+    await settle();
     assert.deepEqual(submitted[0]!.scopes, ["read"]);
     assert.equal(el("github-sync").hidden, true);
     el("github-confirm").checked = true;
     el("github-write").checked = true;
     el("github-pr").checked = true;
+    el("github-connect").dispatchEvent(
+      new Event("submit", { cancelable: true })
+    );
+    await settle();
+    el("github-confirm").checked = true;
     el("github-connect").dispatchEvent(
       new Event("submit", { cancelable: true })
     );
@@ -657,6 +682,121 @@ test("private deployment profiles reject unsafe permissions, credential referenc
   } finally {
     if (old === undefined) delete process.env.OCTO_GITHUB_CONFIG;
     else process.env.OCTO_GITHUB_CONFIG = old;
+    await f.close();
+  }
+});
+
+test("one-time connection plans reject replay, stale scopes/configuration and expiry", async () => {
+  const f = await fixture();
+  try {
+    const old = await f.prepare(["read", "write", "create_pr"]);
+    const delayed = await f.prepare(["read", "write"]);
+    await f.command("connect", old, f.buyer);
+    const expiry = f.service().read(f.buyer, f.id).connection!.expiresAt;
+    f.advance(100);
+    await assert.rejects(
+      f.command("connect", old, f.buyer),
+      /CONFIRMATION_INVALID/
+    );
+    assert.equal(f.service().read(f.buyer, f.id).connection!.expiresAt, expiry);
+    const beforeRevoke = await f.prepare(["read", "write"]);
+    await f.command("revoke", { confirmed: true }, f.buyer);
+    for (const fields of [old, delayed, beforeRevoke])
+      await assert.rejects(
+        f.command("connect", fields, f.buyer),
+        /CONFIRMATION_INVALID/
+      );
+    const beforeDowngrade = await f.prepare(["read", "write"]);
+    await f.connect(["read"]);
+    await assert.rejects(
+      f.command("connect", beforeDowngrade, f.buyer),
+      /CONFIRMATION_INVALID/
+    );
+    await assert.rejects(
+      f.command("connect", old, f.buyer),
+      /CONFIRMATION_INVALID/
+    );
+    await assert.rejects(f.command("sync"), ForbiddenError);
+    const fresh = await f.prepare(["read"]);
+    await assert.rejects(
+      f.command("connect", { ...fresh, confirmationId: undefined }, f.buyer),
+      /CONFIRMATION_INVALID/
+    );
+    await assert.rejects(
+      f.command("connect", { ...fresh, ttlMs: 800000 }, f.buyer),
+      /CONFIRMATION_INVALID/
+    );
+    await assert.rejects(
+      f.command("connect", { ...fresh, scopes: ["read", "write"] }, f.buyer),
+      /CONFIRMATION_INVALID/
+    );
+    f.profile.base = "other";
+    await assert.rejects(
+      f.command("connect", fresh, f.buyer),
+      /CONFIRMATION_INVALID/
+    );
+    f.profile.base = "main";
+    const shortFields = { profileId: "test", scopes: ["read"], ttlMs: 100 };
+    const shortPlan = await f.command("prepare_connect", shortFields, f.buyer);
+    assert.ok("confirmationId" in shortPlan);
+    f.advance(101);
+    await assert.rejects(
+      f.command(
+        "connect",
+        {
+          ...shortFields,
+          confirmed: true,
+          confirmationId: shortPlan.confirmationId
+        },
+        f.buyer
+      ),
+      /CONFIRMATION_INVALID/
+    );
+    f.db.prepare("UPDATE contracts SET version=2 WHERE id=?").run(f.id);
+    await assert.rejects(
+      f.command("connect", { ...fresh, version: 2 }, f.buyer),
+      /CONFIRMATION_INVALID/
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+test("full snapshots reject remote deletions before any writes, including retries and changed baseline", async () => {
+  const f = await fixture();
+  try {
+    await f.connect();
+    f.baseTree.tree = [
+      { path: "src", type: "tree" },
+      { path: "src/code.txt", type: "blob" },
+      { path: "important.txt", type: "blob" },
+      { path: "nested/keep.txt", type: "blob" }
+    ];
+    for (let i = 0; i < 2; i++) {
+      await assert.rejects(
+        f.command("sync", { confirmed: true }),
+        /GITHUB_DELETION_DISABLED.*important.txt.*nested\/keep.txt/
+      );
+      assert.equal(
+        f.seen.some(r => r.method === "POST"),
+        false
+      );
+      assert.equal(f.service().read(f.seller, f.id).evidence.length, 0);
+    }
+    f.baseTree.tree = [{ path: "src/code.txt", type: "blob" }];
+    f.baseTree.truncated = true;
+    await assert.rejects(f.command("sync"), /GITHUB_BASE_TREE_INCOMPLETE/);
+    assert.equal(
+      f.seen.some(r => r.method === "POST"),
+      false
+    );
+    f.baseTree.truncated = false;
+    await f.command("sync");
+    f.refs.set("main", "b".repeat(40));
+    await assert.rejects(f.command("sync"), /GITHUB_BASE_CHANGED/);
+    await assert.rejects(f.command("create_pr"), /GITHUB_BASE_CHANGED/);
+    assert.equal(f.pulls.length, 0);
+  } finally {
     await f.close();
   }
 });

@@ -159,15 +159,19 @@ export class GitHubConnections {
     try {
       const { contract, access } = this.access(token, id, action !== "checks");
       if (input.version !== contract.version) remoteFail("STALE_CONTRACT");
-      if (action === "connect" || action === "revoke") {
+      if (
+        action === "prepare_connect" ||
+        action === "connect" ||
+        action === "revoke"
+      ) {
         if (
           access.identity.kind !== "user" ||
           access.role !== "buyer" ||
           access.identity.id !== contract.buyer_id ||
-          input.confirmed !== true
+          (action !== "prepare_connect" && input.confirmed !== true)
         )
           throw new ForbiddenError();
-        this.atomic(() => {
+        const result = this.atomic(() => {
           if (action === "revoke") {
             this.db
               .prepare(
@@ -192,6 +196,48 @@ export class GitHubConnections {
               ttl > 900000
             )
               remoteFail("INVALID_TTL");
+            const binding = JSON.stringify({
+              profile: profileDigest(p),
+              version: contract.version,
+              actor: access.identity.id,
+              scopes: [...new Set(scopes)].sort(),
+              ttl
+            });
+            if (action === "prepare_connect") {
+              const confirmationId = randomUUID();
+              const expiresAt = Math.min(this.now() + ttl, p.expiresAt);
+              this.db
+                .prepare(
+                  "INSERT INTO github_confirmations(id,contract_id,binding,expires_at) VALUES (?,?,?,?)"
+                )
+                .run(confirmationId, id, binding, expiresAt);
+              return {
+                confirmationId,
+                repository: `${p.owner}/${p.repo}`,
+                repositoryId: p.repositoryId,
+                base: p.base,
+                version: contract.version,
+                scopes,
+                expiresAt
+              };
+            }
+            const confirmation = this.db
+              .prepare(
+                "SELECT * FROM github_confirmations WHERE id=? AND contract_id=?"
+              )
+              .get(
+                typeof input.confirmationId === "string"
+                  ? input.confirmationId
+                  : "",
+                id
+              );
+            if (
+              !confirmation ||
+              confirmation.invalidated ||
+              confirmation.binding !== binding ||
+              Number(confirmation.expires_at) <= this.now()
+            )
+              remoteFail("GITHUB_CONFIRMATION_INVALID");
             const old = this.row(id);
             // Scope increases/reconnections are new explicit confirmations, never an extension of a read credential.
             if (old && Number(old.lease_until) > this.now())
@@ -212,9 +258,16 @@ export class GitHubConnections {
                 contract.version,
                 access.identity.id,
                 JSON.stringify([...new Set(scopes)]),
-                Math.min(this.now() + ttl, p.expiresAt)
+                Number(confirmation.expires_at)
               );
           }
+          // Consuming, revoking or replacing a connection invalidates every
+          // outstanding confirmation, including delayed requests from other tabs.
+          this.db
+            .prepare(
+              "UPDATE github_confirmations SET invalidated=1 WHERE contract_id=?"
+            )
+            .run(id);
           const saved = this.row(id);
           if (saved)
             this.record(id, contract.version, access.identity.id, action, {
@@ -224,7 +277,7 @@ export class GitHubConnections {
               revoked: Boolean(saved.revoked)
             });
         });
-        return this.read(token, id);
+        return result || this.read(token, id);
       }
       const scope: RemoteScope =
         action === "sync"
@@ -330,6 +383,17 @@ export class GitHubConnections {
           .run(connectionId, commit.sha, JSON.stringify(plan));
       } else plan = JSON.parse(String(saved.plan));
       if (plan.tree !== snapshot.tree) remoteFail();
+      if (action === "sync" || action === "create_pr") {
+        if ((await this.rest.ref(p, p.base, assertAuthorized)) !== plan.baseSha)
+          remoteFail("GITHUB_BASE_CHANGED");
+        if (action === "create_pr")
+          await this.rest.assertNoDeletions(
+            p,
+            plan.baseSha,
+            snapshot,
+            assertAuthorized
+          );
+      }
       if (action === "sync")
         await this.rest.sync(p, plan, snapshot, assertAuthorized);
       else

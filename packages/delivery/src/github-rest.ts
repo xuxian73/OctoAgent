@@ -166,6 +166,46 @@ export class GitHubRest {
       remoteFail();
     return r.object.sha as string;
   }
+  // Full snapshots may only preserve or add baseline paths. Deletion is
+  // deliberately unavailable, even to an agent holding write permission.
+  async assertNoDeletions(
+    p: GitHubProfile,
+    baseSha: string,
+    snapshot: { files: { path: string }[] },
+    guard: () => void
+  ) {
+    const commit = await this.request(p, `/git/commits/${baseSha}`, guard);
+    if (commit.sha !== baseSha || !/^[a-f0-9]{40}$/.test(commit.tree?.sha))
+      remoteFail();
+    const tree = await this.request(
+      p,
+      `/git/trees/${commit.tree.sha}?recursive=1`,
+      guard
+    );
+    if (
+      tree.sha !== commit.tree.sha ||
+      tree.truncated !== false ||
+      !Array.isArray(tree.tree)
+    )
+      remoteFail("GITHUB_BASE_TREE_INCOMPLETE");
+    const paths = new Set(snapshot.files.map(f => f.path));
+    const removed: string[] = [];
+    const seen = new Set<string>();
+    for (const entry of tree.tree) {
+      if (
+        typeof entry.path !== "string" ||
+        !entry.path ||
+        seen.has(entry.path) ||
+        !["tree", "blob", "commit"].includes(entry.type)
+      )
+        remoteFail();
+      seen.add(entry.path);
+      if (entry.type !== "tree" && !paths.has(entry.path))
+        removed.push(entry.path);
+    }
+    if (removed.length)
+      remoteFail("GITHUB_DELETION_DISABLED: " + JSON.stringify(removed.sort()));
+  }
   async sync(
     p: GitHubProfile,
     plan: {
@@ -181,6 +221,7 @@ export class GitHubRest {
     guard: () => void
   ) {
     await this.repository(p, guard);
+    await this.assertNoDeletions(p, plan.baseSha, snapshot, guard);
     const existing = await this.ref(p, plan.branch, guard, true);
     if (existing && existing !== plan.remoteSha) remoteFail();
     if (!existing) {
