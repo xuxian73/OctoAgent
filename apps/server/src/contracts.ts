@@ -3,7 +3,10 @@ import {
   bearerToken,
   ForbiddenError
 } from "../../../packages/auth/src/index.js";
-import { Contracts } from "../../../packages/database/src/contracts.js";
+import {
+  Contracts,
+  contractBodyLimit
+} from "../../../packages/database/src/contracts.js";
 import { RequirementError } from "../../../packages/requirements/src/model.js";
 export async function contractRoute(
   request: IncomingMessage,
@@ -31,7 +34,8 @@ export async function contractRoute(
       for await (const chunk of request) {
         const bytes = Buffer.from(chunk);
         size += bytes.length;
-        if (size > 200000) throw new RequirementError("BODY_TOO_LARGE", 413);
+        if (size > contractBodyLimit)
+          throw new RequirementError("BODY_TOO_LARGE", 413);
         chunks.push(bytes);
       }
       try {

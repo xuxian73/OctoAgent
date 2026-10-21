@@ -15,7 +15,10 @@ import {
 } from "../packages/requirements/src/model.js";
 import { Proposal } from "../packages/requirements/src/bids.js";
 import { seedIdentities } from "./fixtures/identity.js";
-import { Contracts } from "../packages/database/src/contracts.js";
+import {
+  Contracts,
+  contractBodyLimit
+} from "../packages/database/src/contracts.js";
 import { contractRoute } from "../apps/server/src/contracts.js";
 function fixture(path = ":memory:") {
   const db = new DatabaseSync(path);
@@ -184,7 +187,7 @@ test("selection preserves maximum-length source fields and all delivery evidence
       evidence: Array.from({ length: 100 }, (_, i) =>
         String(i).padEnd(10000, "证")
       ),
-      milestones: ["里".repeat(10000), "程".repeat(10000)]
+      milestones: Array.from({ length: 100 }, () => "里".repeat(10000))
     };
     const task = f.publish({ ...f.draft, values });
     const bid = f.submit(f.seller, task, proposal);
@@ -206,38 +209,71 @@ test("selection preserves maximum-length source fields and all delivery evidence
     });
     assert.deepEqual(f.contracts.select(f.buyer, bid.id, true), contract);
     let sequence = 0;
-    const command = (token: string, action: string, extra = {}) => {
-      contract = f.contracts.command(token, contract.id, {
-        action,
-        requestKey: `long-${++sequence}`,
-        version: contract.version,
-        revision: contract.revision,
-        confirmed: true,
-        reason,
-        ...extra
-      });
-    };
-    command(f.buyer, "transition", { to: "pending_confirmation" });
-    command(f.buyer, "confirm");
-    command(f.seller, "confirm");
-    for (const field of ["scope", "deliverables", "acceptance"] as const) {
-      assert.throws(
-        () =>
-          command(f.buyer, "change", {
-            terms: { ...original.terms, [field]: original.terms[field] + "超" }
-          }),
-        /INVALID_TEXT/
+    const command = async (token: string, action: string, extra = {}) => {
+      const result = await request(
+        f.contracts,
+        token,
+        `/${contract.id}/commands`,
+        {
+          action,
+          requestKey: `long-${++sequence}`,
+          version: contract.version,
+          revision: contract.revision,
+          confirmed: true,
+          reason,
+          ...extra
+        }
       );
+      if (result.status === 200) contract = result.body.data;
+      return result;
+    };
+    assert.equal(
+      (await command(f.buyer, "transition", { to: "pending_confirmation" }))
+        .status,
+      200
+    );
+    assert.equal((await command(f.buyer, "confirm")).status, 200);
+    assert.equal((await command(f.seller, "confirm")).status, 200);
+    assert.equal(contract.status, "active");
+    const before = f.contracts.read(f.buyer, contract.id);
+    for (const field of ["scope", "deliverables", "acceptance"] as const) {
+      const result = await command(f.buyer, "change", {
+        terms: { ...original.terms, [field]: original.terms[field] + "超" }
+      });
+      assert.equal(result.status, 400);
+      assert.equal(result.body.error.code, "INVALID_TEXT");
+      assert.deepEqual(f.contracts.read(f.buyer, contract.id), before);
     }
-    command(f.seller, "change", {
-      terms: { ...original.terms, price: 200 }
-    });
+    assert.equal(
+      (
+        await command(f.seller, "change", {
+          terms: { ...original.terms, price: 200 }
+        })
+      ).status,
+      200
+    );
     assert.equal(contract.status, "pending_confirmation");
     assert.deepEqual(contract.versions[0], original);
     assert.deepEqual(contract.versions[1]!.terms, {
       ...original.terms,
       price: 200
     });
+    assert.equal((await command(f.buyer, "confirm")).status, 200);
+    assert.equal(contract.status, "pending_confirmation");
+    assert.equal((await command(f.seller, "confirm")).status, 200);
+    assert.equal(contract.status, "active");
+    assert.equal(contract.version, 2);
+    assert.deepEqual(contract.versions[0], original);
+    const active = f.contracts.read(f.buyer, contract.id);
+    const oversized = await command(f.seller, "change", {
+      terms: {
+        ...original.terms,
+        scope: "超".repeat(Math.floor(contractBodyLimit / 3) + 1)
+      }
+    });
+    assert.equal(oversized.status, 413);
+    assert.equal(oversized.body.error.code, "BODY_TOO_LARGE");
+    assert.deepEqual(f.contracts.read(f.buyer, contract.id), active);
   } finally {
     f.db.close();
   }
@@ -475,9 +511,12 @@ async function request(
   path: string,
   body?: unknown
 ) {
-  const stream = Readable.from(
-    body === undefined ? [] : [JSON.stringify(body)]
-  ) as IncomingMessage;
+  const bytes =
+    body === undefined ? Buffer.alloc(0) : Buffer.from(JSON.stringify(body));
+  const chunks: Buffer[] = [];
+  for (let offset = 0; offset < bytes.length; offset += 65536)
+    chunks.push(bytes.subarray(offset, offset + 65536));
+  const stream = Readable.from(chunks) as IncomingMessage;
   stream.url = "/api/contracts" + path;
   stream.method = body === undefined ? "GET" : "POST";
   stream.headers = { "content-type": "application/json" };

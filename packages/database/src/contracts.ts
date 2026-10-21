@@ -14,9 +14,17 @@ export interface Terms {
   milestones: string[];
 }
 // Composite terms must retain every legal source field, including separators.
-const scopeLimit = 4 * 10000 + "\n\n权限：\n范围排除：".length;
-const deliverablesLimit = 10000 + 100 * (10000 + 1);
-function text(value: unknown, maxLength = 10000): string {
+const textLimit = 10000;
+const milestoneLimit = 100;
+const scopeLimit = 4 * textLimit + "\n\n权限：\n范围排除：".length;
+const deliverablesLimit = textLimit + 100 * (textLimit + 1);
+// JSON can encode each UTF-16 code unit as six ASCII bytes (\uXXXX).
+// Include acceptance/change rules, milestones, request key and both reason
+// fields, plus 64 KiB for property names, punctuation and scalar metadata.
+export const contractBodyLimit =
+  6 * (scopeLimit + deliverablesLimit + (milestoneLimit + 5) * textLimit) +
+  64 * 1024;
+function text(value: unknown, maxLength = textLimit): string {
   if (typeof value !== "string" || !value.trim() || value.length > maxLength)
     throw new RequirementError("INVALID_TEXT");
   return value.trim();
@@ -32,7 +40,7 @@ function terms(input: unknown): Terms {
     t.price > 1e9 ||
     !Array.isArray(t.milestones) ||
     !t.milestones.length ||
-    t.milestones.length > 100
+    t.milestones.length > milestoneLimit
   )
     throw new RequirementError("INVALID_TERMS");
   return {
