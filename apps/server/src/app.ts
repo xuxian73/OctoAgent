@@ -1,9 +1,15 @@
+import {
+  renderApplication,
+  emptyApplication,
+  businessPages,
+  ApplicationProject
+} from "../../web/src/application.js";
 import { Onboarding } from "../../../packages/database/src/onboarding.js";
 import { onboardingRoute } from "./onboarding.js";
 import { renderOnboarding } from "../../web/src/onboarding.js";
 import { Login } from "./login.js";
 import { sessionCookie, webToken } from "../../../packages/auth/src/index.js";
-import { renderLogin, renderSignedIn } from "../../web/src/session.js";
+import { renderLogin } from "../../web/src/session.js";
 import { Workspaces } from "../../../packages/database/src/workspaces.js";
 import { workspaceRoute } from "./workspaces.js";
 import { renderWorkspaces } from "../../web/src/workspaces.js";
@@ -66,87 +72,111 @@ export function handleRequest(
     }
     if (path === "/login" && request.method === "GET") {
       response.setHeader("Content-Type", "text/html; charset=utf-8");
-      response.end(renderLogin());
+      response.end(
+        renderLogin(
+          new URL(request.url!, "http://localhost").searchParams.has("expired")
+        )
+      );
       return;
     }
     if (path === "/api/onboarding" || path === "/api/contexts") {
       void onboardingRoute(request, response, requestId, onboarding);
       return;
     }
-    if (path === "/onboarding" && request.method === "GET") {
-      if (
-        !authorization ||
-        authorization.identity(webToken(request)).kind !== "user"
-      )
-        throw new ForbiddenError();
-      response.setHeader("Content-Type", "text/html; charset=utf-8");
-      response.end(renderOnboarding());
-      return;
-    }
-    const cookie = sessionCookie(request);
     if (
-      cookie !== undefined &&
-      (path.startsWith("/api/") || path === "/" || path.startsWith("/console"))
-    ) {
-      if (
-        !authorization ||
-        authorization.identity(webToken(request)).kind !== "user"
-      )
-        throw new ForbiddenError();
-    }
+      path.startsWith("/api/") &&
+      sessionCookie(request) !== undefined &&
+      (!authorization ||
+        authorization.identity(webToken(request)).kind !== "user")
+    )
+      throw new ForbiddenError();
+    const page = path.slice(1);
     if (
-      cookie !== undefined &&
       request.method === "GET" &&
-      (path === "/" || path === "/console" || path.startsWith("/console/"))
+      (Object.hasOwn(businessPages, page) ||
+        path === "/" ||
+        path === "/console" ||
+        path.startsWith("/console/") ||
+        path === "/onboarding")
     ) {
+      try {
+        if (
+          !authorization ||
+          authorization.identity(webToken(request)).kind !== "user"
+        )
+          throw new ForbiddenError();
+      } catch {
+        response.statusCode = 303;
+        response.setHeader("Location", "/login?expired=1");
+        response.end("请先登录 OctoAgent");
+        return;
+      }
+      const context = onboarding?.list(webToken(request));
       response.setHeader("Content-Type", "text/html; charset=utf-8");
-      if (onboarding?.list(webToken(request)).canInitialize) {
+      if (path === "/onboarding") {
+        response.end(renderOnboarding());
+        return;
+      }
+      if (context?.canInitialize) {
         response.statusCode = 303;
         response.setHeader("Location", "/onboarding");
         response.end();
-      } else response.end(renderSignedIn());
+        return;
+      }
+      const projects = ((context?.projects ||
+        []) as unknown) as ApplicationProject[];
+      const requested = new URL(
+        request.url!,
+        "http://localhost"
+      ).searchParams.get("project");
+      const selected = requested
+        ? projects.find(p => p.id === requested)
+        : projects[0];
+      const destination = Object.hasOwn(businessPages, page)
+        ? page
+        : selected?.pages[0];
+      const renderers: Record<string, () => string> = {
+        requirements: renderRequirementEditor,
+        market: renderMarket,
+        contracts: renderContracts,
+        workspaces: renderWorkspaces
+      };
+      const allowed = destination && selected?.pages.includes(destination);
+      if (!allowed) response.statusCode = 403;
+      response.end(
+        renderApplication(
+          allowed
+            ? renderers[destination!]!()
+            : emptyApplication(
+                "暂无获准访问的内容，请选择授权项目或联系组织负责人。"
+              ),
+          destination || "",
+          projects,
+          selected
+        )
+      );
       return;
     }
     if (path === "/api/workspaces" || path.startsWith("/api/workspaces/")) {
       void workspaceRoute(request, response, requestId, workspaces);
       return;
     }
-    if (path === "/workspaces" && request.method === "GET") {
-      response.setHeader("Content-Type", "text/html; charset=utf-8");
-      response.setHeader("Cache-Control", "no-store");
-      response.end(renderWorkspaces());
-      return;
-    }
+
     if (path === "/api/contracts" || path.startsWith("/api/contracts/")) {
       void contractRoute(request, response, requestId, contracts);
       return;
     }
-    if (path === "/contracts" && request.method === "GET") {
-      response.setHeader("Content-Type", "text/html; charset=utf-8");
-      response.setHeader("Cache-Control", "no-store");
-      response.end(renderContracts());
-      return;
-    }
+
     if (path === "/api/market" || path.startsWith("/api/market/")) {
       void marketRoute(request, response, requestId, market);
       return;
     }
-    if (path === "/market" && request.method === "GET") {
-      response.setHeader("Content-Type", "text/html; charset=utf-8");
-      response.setHeader("Cache-Control", "no-store");
-      response.end(renderMarket());
-      return;
-    }
+
     if (path === "/api/requirements" || path.startsWith("/api/requirements/")) {
       void requirementRoute(request, response, requestId, requirements);
       return;
     }
-    if (path === "/requirements" && request.method === "GET") {
-      response.setHeader("Content-Type", "text/html; charset=utf-8");
-      response.setHeader("Cache-Control", "no-store");
-      response.end(renderRequirementEditor());
-      return;
-    }
+
     // Read-only authorization metadata, not contract/workspace business data.
     if (path.startsWith("/api/access/")) {
       response.setHeader("Cache-Control", "no-store");
@@ -228,6 +258,10 @@ export function handleRequest(
       return;
     }
     const assets: Record<string, [string, string]> = {
+      "/client.js": [
+        "dist/apps/web/src/client.js",
+        "text/javascript; charset=utf-8"
+      ],
       "/onboarding.js": [
         "dist/apps/web/src/onboarding.js",
         "text/javascript; charset=utf-8"

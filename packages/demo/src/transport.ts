@@ -1,11 +1,12 @@
 import { Readable } from "node:stream";
 import { IncomingMessage, ServerResponse } from "node:http";
 import { handleRequest } from "../../../apps/server/src/app.js";
+import { Onboarding } from "../../database/src/onboarding.js";
 import { Services } from "../../mcp/src/index.js";
 
 // Exercise the real HTTP dispatcher and parsers without opening a listening socket.
 export function localRequest(
-  s: Services,
+  s: Services & { onboarding?: Onboarding },
   token: string,
   path: string,
   method = "GET",
@@ -40,7 +41,9 @@ export function localRequest(
       s.requirements,
       s.market,
       s.contracts,
-      s.workspaces
+      s.workspaces,
+      undefined,
+      s.onboarding
     );
   });
 }

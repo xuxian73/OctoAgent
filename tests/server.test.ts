@@ -11,7 +11,7 @@ function request(url: string, method = "GET") {
     setHeader(name: string, value: string) {
       headers.set(name, value);
     },
-    end(value: string | Buffer) {
+    end(value: string | Buffer = "") {
       body = value.toString();
     }
   };
@@ -58,7 +58,7 @@ test("internal errors contain only a stable public message", () => {
 
 test("console is anonymous and preview contains only synthetic context", () => {
   const anonymous = request("/console/contracts?state=empty");
-  assert.equal(anonymous.status, 401);
+  assert.equal(anonymous.status, 303);
   assert.match(anonymous.body, /请先登录/);
   assert.doesNotMatch(anonymous.body, /Agent 动作摘要|aria-label="主导航"/);
   const preview = request("/preview/contracts");
@@ -85,7 +85,10 @@ test("styles are served and contract API requires authorization", () => {
 });
 
 test("requirement editor and its browser dependency are explicitly served", () => {
-  assert.match(request("/requirements").body, /id="requirement-form"/);
+  assert.equal(
+    request("/requirements").headers.get("Location"),
+    "/login?expired=1"
+  );
   assert.match(request("/requirements.js").body, /mountRequirementEditor/);
   assert.match(
     request("/packages/requirements/src/model.js").body,
@@ -95,7 +98,7 @@ test("requirement editor and its browser dependency are explicitly served", () =
 });
 
 test("contract console and browser module are explicitly served", () => {
-  assert.match(request("/contracts").body, /人工确认本次操作/);
+  assert.equal(request("/contracts").status, 303);
   assert.match(request("/contracts.js").body, /mountContracts/);
   assert.equal(request("/api/contracts-other").status, 404);
 });

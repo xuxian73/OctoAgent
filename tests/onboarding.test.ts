@@ -9,6 +9,8 @@ import { SqliteIdentityStore } from "../packages/database/src/identity.js";
 import { Onboarding } from "../packages/database/src/onboarding.js";
 import { Requirements } from "../packages/database/src/requirements.js";
 import { handleRequest } from "../apps/server/src/app.js";
+import { setup } from "./fixtures/contracts.js";
+import { Workspaces } from "../packages/database/src/workspaces.js";
 import {
   renderOnboarding,
   mountOnboarding,
@@ -92,6 +94,110 @@ function fixture() {
   return { db, auth, token, service, requirements, body, call, create };
 }
 
+test("contract-only grants expose the project and actual business pages without project read", async () => {
+  const f = setup();
+  const contexts = new Onboarding(f.db, f.auth);
+  const workspaces = new Workspaces(f.db, f.auth, () => 1000);
+  const call = (path: string, token = f.seller) =>
+    new Promise<{ status: number; body: string }>(resolve => {
+      const request = Readable.from([]) as IncomingMessage;
+      request.url = path;
+      request.method = "GET";
+      request.headers = { cookie: "octo_session=" + token };
+      request.rawHeaders = ["Cookie", request.headers.cookie!];
+      const response = {
+        statusCode: 200,
+        setHeader() {},
+        end(body = "") {
+          resolve({ status: this.statusCode, body });
+        }
+      };
+      handleRequest(
+        request,
+        (response as unknown) as ServerResponse,
+        f.auth,
+        f.req,
+        f.market,
+        f.contracts,
+        workspaces,
+        undefined,
+        contexts
+      );
+    });
+  try {
+    f.db.exec(
+      "DELETE FROM resource_grants WHERE user_id='seller' AND resource_kind='project'"
+    );
+    assert.deepEqual(
+      contexts.list(f.seller).projects.map(p => [p.id, p.pages]),
+      [["project-a", ["contracts"]]]
+    );
+    assert.equal((await call("/workspaces?project=project-a")).status, 403);
+    f.activate();
+    const id = f.current().id;
+    assert.equal(f.contracts.read(f.seller, id).id, id);
+    assert.equal(workspaces.read(f.seller, id).contractId, id);
+    const listed = JSON.parse((await call("/api/contexts")).body).data.projects;
+    assert.deepEqual(
+      listed.map((p: { id: string; pages: string[] }) => [p.id, p.pages]),
+      [["project-a", ["contracts", "workspaces"]]]
+    );
+    for (const page of ["contracts", "workspaces"]) {
+      const result = await call(`/${page}?project=project-a`);
+      assert.equal(result.status, 200);
+      assert.match(result.body, /id="contract"/);
+      assert.match(result.body, /value="project-a"/);
+      assert.match(result.body, /href="\/contracts\?project=project-a"/);
+      assert.match(result.body, /href="\/workspaces\?project=project-a"/);
+      assert.doesNotMatch(
+        result.body,
+        /href="\/(requirements|market)\?|id="session"/
+      );
+    }
+    for (const page of ["requirements", "market"])
+      assert.equal((await call(`/${page}?project=project-a`)).status, 403);
+    assert.equal((await call("/contracts?project=project-b")).status, 403);
+    assert.equal((await call(`/api/contracts/${id}`)).status, 200);
+    assert.equal((await call(`/api/workspaces/${id}`)).status, 200);
+    for (const mutation of [
+      "DELETE FROM resource_grants WHERE user_id='seller' AND resource_kind='contract'",
+      "DELETE FROM memberships WHERE user_id='seller' AND project_id='project-a'",
+      "DELETE FROM memberships WHERE user_id='seller' AND project_id=''",
+      "UPDATE memberships SET role='buyer' WHERE user_id='seller' AND project_id='project-a'"
+    ]) {
+      f.db.exec("SAVEPOINT revoke_context");
+      f.db.exec(mutation);
+      assert.equal(contexts.list(f.seller).projects.length, 0);
+      for (const page of ["contracts", "workspaces"]) {
+        const denied = await call(`/${page}?project=project-a`);
+        assert.equal(
+          denied.status,
+          contexts.list(f.seller).canInitialize ? 303 : 403
+        );
+        assert.doesNotMatch(denied.body, /id="contract"/);
+        assert.equal((await call(`/api/${page}/${id}`)).status, 403);
+      }
+      f.db.exec("ROLLBACK TO revoke_context; RELEASE revoke_context");
+    }
+    // A grant alone does not make a non-party a contract participant.
+    f.db
+      .prepare(
+        "INSERT INTO resource_grants VALUES ('seller-two','contract',?,'read')"
+      )
+      .run(id);
+    f.db.exec(
+      "DELETE FROM resource_grants WHERE user_id='seller-two' AND resource_kind='project'"
+    );
+    assert.equal(contexts.list(f.second).projects.length, 0);
+    assert.equal(
+      (await call("/contracts?project=project-a", f.second)).status,
+      403
+    );
+  } finally {
+    f.db.close();
+  }
+});
+
 test("new human account reaches onboarding, creates a project and can save a draft without seeds", async () => {
   const f = fixture();
   try {
@@ -161,7 +267,7 @@ test("initialization rejects anonymous, agents, forged identity fields, invalid 
       );
       assert.equal(
         (await f.call("/onboarding", "GET", undefined, token)).status,
-        403
+        303
       );
     }
     for (const input of [
@@ -416,5 +522,59 @@ test("first-use idempotency and eligibility survive database reopen across conne
   } finally {
     database.close();
     rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("real shell follows authorized projects and pages; forged context and revoked access reveal no editor", async () => {
+  const f = fixture();
+  try {
+    const created = (await f.create()).body.data;
+    const project = created.projectId;
+    for (const page of ["requirements", "market", "contracts"]) {
+      const result = await f.call("/" + page + "?project=" + project);
+      assert.equal(result.status, 200);
+      assert.match(result.body, /aria-label="主导航"/);
+      assert.match(
+        result.body,
+        new RegExp(`href="/${page}\\?project=${project}" aria-current="page"`)
+      );
+      assert.match(result.body, /id="project"/);
+      assert.doesNotMatch(
+        result.body,
+        /href="\/workspaces|项目 ID|id="session"/
+      );
+    }
+    assert.match((await f.call("/requirements")).body, /待补全：.*验收标准/);
+    assert.equal((await f.call("/workspaces")).status, 403);
+    const forged = await f.call("/requirements?project=ungranted");
+    assert.equal(forged.status, 403);
+    assert.doesNotMatch(forged.body, /id="requirement-form"/);
+    f.db
+      .prepare(
+        "DELETE FROM resource_grants WHERE user_id=? AND resource_id=? AND action='write'"
+      )
+      .run("new-user", project);
+    assert.equal((await f.call("/contracts")).status, 403);
+    f.db
+      .prepare("DELETE FROM resource_grants WHERE user_id=? AND resource_id=?")
+      .run("new-user", project);
+    const revoked = await f.call("/requirements");
+    assert.equal(revoked.status, 403);
+    assert.doesNotMatch(revoked.body, /id="requirement-form"|测试项目/);
+    for (const page of ["requirements", "market", "contracts", "workspaces"]) {
+      const anonymous = await f.call("/" + page, "GET", undefined, "");
+      assert.equal(anonymous.status, 303);
+      assert.equal(anonymous.headers.Location, "/login?expired=1");
+    }
+    assert.match(
+      (await f.call("/login?expired=1")).body,
+      /登录已失效，请重新登录/
+    );
+    assert.equal(
+      (await f.call("/preview/requirements", "GET", undefined, "")).status,
+      200
+    );
+  } finally {
+    f.db.close();
   }
 });

@@ -278,3 +278,18 @@ footer {
 .requirement-editor button {
   margin: 0.5rem 0;
 }
+
+.sidebar select {
+  max-width: 100%;
+  width: 100%;
+  padding: 0.75rem;
+  font: inherit;
+}
+.shell > main {
+  min-width: 0;
+}
+.requirement-editor button {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}

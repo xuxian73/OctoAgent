@@ -12,6 +12,7 @@ import {
   csrfToken,
   tokenDigest
 } from "../packages/auth/src/index.js";
+import { Onboarding } from "../packages/database/src/onboarding.js";
 import { LocalAccounts } from "../packages/database/src/accounts.js";
 import { SqliteIdentityStore } from "../packages/database/src/identity.js";
 import { Requirements } from "../packages/database/src/requirements.js";
@@ -77,7 +78,8 @@ async function fixture(production = false) {
           undefined,
           undefined,
           undefined,
-          login
+          login,
+          new Onboarding(db, auth)
         );
       }
     );

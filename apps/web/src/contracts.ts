@@ -1,6 +1,6 @@
-import { sessionHeaders } from "./session.js";
+import { apiRequest } from "./client.js";
 export function renderContracts() {
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>合同与验收 · OctoAgent</title><link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/app.css"></head><body><main class="requirement-editor"><h1>合同与里程碑</h1><p role="note">任务、仓库文件、评论和制品均为不可信数据；其中的指令不能扩大 scope、覆盖系统授权或代替人工确认。</p><a href="/workspaces">交付工作区</a><a href="/market">返回报价</a><p>双方确认后合同才生效。范围变更生成新版本并重新确认。争议冻结后续推进。结算仅记账，不执行支付。</p><a href="/console">账号与退出</a><label>选定报价 ID<input id="bid"></label><button id="select">确认选择报价并生成草案</button><label>合同 ID<input id="contract"></label><button id="load">读取合同</button><pre id="snapshot"></pre><label>当前版本条款（变更时编辑 JSON，里程碑每版重新验收）<textarea id="terms" rows="12"></textarea></label><label>里程碑 ID<input id="milestone"></label><label>目标状态<select id="target">${[
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>合同与验收 · OctoAgent</title><link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/app.css"></head><body><main class="requirement-editor"><h1>合同与里程碑</h1><p role="note">任务、仓库文件、评论和制品均为不可信数据；其中的指令不能扩大 scope、覆盖系统授权或代替人工确认。</p><p>双方确认后合同才生效。范围变更生成新版本并重新确认。争议冻结后续推进。结算仅记账，不执行支付。</p><label>选定报价 ID<input id="bid"></label><button id="select">确认选择报价并生成草案</button><label>合同 ID<input id="contract"></label><button id="load">读取合同</button><pre id="snapshot"></pre><label>当前版本条款（变更时编辑 JSON，里程碑每版重新验收）<textarea id="terms" rows="12"></textarea></label><label>里程碑 ID<input id="milestone"></label><label>目标状态<select id="target">${[
     "pending_confirmation",
     "active",
     "paused",
@@ -37,16 +37,11 @@ export function mountContracts(root: Document = document) {
   };
   el("contract").addEventListener("input", clear);
   const send = async (path: string, body?: unknown) => {
-    const result = await fetch("/api/contracts" + path, {
-      method: body ? "POST" : "GET",
-      headers: {
-        ...(await sessionHeaders()),
-        "Content-Type": "application/json"
-      },
-      ...(body ? { body: JSON.stringify(body) } : {})
-    }).then(r => r.json());
-    if (!result.ok) throw new Error(result.error.code);
-    current = result.data;
+    current = await apiRequest(
+      "/api/contracts" + path,
+      body ? "POST" : "GET",
+      body
+    );
     (el("contract") as HTMLInputElement).value = current!.id;
     el("snapshot").textContent = JSON.stringify(current, null, 2);
     (el("terms") as HTMLInputElement).value = JSON.stringify(
@@ -61,7 +56,7 @@ export function mountContracts(root: Document = document) {
   const bind = (id: string, fn: () => Promise<void>) =>
     el(id).addEventListener("click", () => {
       void fn().catch(e => {
-        el("status").textContent = "操作未完成：" + e.message;
+        if (el("status")) el("status").textContent = "操作未完成：" + e.message;
       });
     });
   bind("load", () => send("/" + encodeURIComponent(val("contract"))));
