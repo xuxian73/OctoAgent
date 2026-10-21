@@ -63,6 +63,8 @@ async function executeRoute(
       data = service.draft(token, id, body.proposal);
     else if (path.length === 5 && method === "POST" && action === "questions")
       data = service.question(token, id, body.recipient, body.topic, body.text);
+    // Both reply directions use the original event ID; Market derives the
+    // responder and private audience from authorization and the stored question.
     else if (path.length === 5 && method === "POST" && action === "answers")
       data = service.answer(
         token,
