@@ -1,0 +1,20 @@
+services:
+  web:
+    build: .
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+      APP_URL: http://localhost:3000
+      DATABASE_URL: file:/app/.data/octoagent.sqlite
+    volumes:
+      - database:/app/.data
+    command:
+      [
+        "sh",
+        "-c",
+        "node dist/packages/database/src/migrate.js && node dist/apps/server/src/main.js",
+      ]
+volumes:
+  database:

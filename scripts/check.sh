@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
-# This is intentionally stack-neutral until docs/spec.md defines the website stack.
-if [[ -f package.json ]]; then
-  npm test --if-present
-  npm run typecheck --if-present
-elif [[ -d src ]]; then
-  python3 -m compileall -q src
-else
-  echo "No application source yet; basic environment check passed."
-fi
+cd "$(dirname "$0")/.."
+# Install explicitly with npm ci first. Never download dependencies during checks.
+npm run format:check
+npm run typecheck
+rm -rf dist
+npm run build
+npm run db:check
+npm test
