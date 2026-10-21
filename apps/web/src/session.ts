@@ -1,3 +1,7 @@
+import {
+  usernamePattern,
+  passwordMaxLength
+} from "../../../packages/shared/src/accounts.js";
 let currentCsrf: string | undefined;
 export async function sessionHeaders(): Promise<Record<string, string>> {
   const response = await fetch("/api/auth/me", {
@@ -67,6 +71,6 @@ export function renderLogin(expired = false): string {
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>登录 · OctoAgent</title><link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/app.css"></head><body><main class="requirement-editor"><h1>登录 OctoAgent</h1><p>${
     expired
       ? "登录已失效，请重新登录后继续。旧项目内容与待确认操作已清除。"
-      : "请使用部署者提供的本地账号。"
-  }</p><form id="login-form" method="post" action="/api/auth/login"><label>账号<input id="username" autocomplete="username" required maxlength="64"></label><label>密码<input id="password" type="password" autocomplete="current-password" required maxlength="256"></label><button>登录</button></form><p id="login-status" role="status"></p></main><script type="module" src="/session.js"></script></body></html>`;
+      : "使用本地账号登录；注册成功后请登录，再进入入驻流程选择角色。"
+  }</p><form id="login-form" method="post" action="/api/auth/login"><label>账号<input id="username" autocomplete="username" required maxlength="64" pattern="${usernamePattern}"></label><label>密码<input id="password" type="password" autocomplete="current-password" required maxlength="${passwordMaxLength}"></label><button>登录</button></form><p id="login-status" role="status"></p><a href="/register">创建普通账户</a></main><script type="module" src="/session.js"></script></body></html>`;
 }

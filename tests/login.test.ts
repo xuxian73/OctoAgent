@@ -20,16 +20,16 @@ import { Login } from "../apps/server/src/login.js";
 import { handleRequest } from "../apps/server/src/app.js";
 import { seedIdentities } from "./fixtures/identity.js";
 
-async function fixture(production = false) {
+async function fixture(production = false, empty = false) {
   const db = new DatabaseSync(":memory:");
   db.exec("PRAGMA foreign_keys = ON");
   db.exec(readFileSync("packages/database/schema/baseline.sql", "utf8"));
-  seedIdentities(db);
+  if (!empty) seedIdentities(db);
   let now = 1000;
   const auth = new Authorization(new SqliteIdentityStore(db), () => now);
   const accounts = new LocalAccounts(db);
   const password = randomBytes(24).toString("base64url");
-  await accounts.create("local-buyer", "buyer", password);
+  if (!empty) await accounts.create("local-buyer", "buyer", password);
   const login = new Login(accounts, auth, () => now, production);
   const requirements = new Requirements(db, auth, () => now);
   const call = (
@@ -439,5 +439,247 @@ test("offline command reads passwords from stdin and grants no business permissi
   } finally {
     db.close();
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+const registrationHeaders = {
+  "content-type": "application/json",
+  "x-octo-register": "1"
+};
+test("empty database registration, first login, onboarding and logout grant no authority", async () => {
+  const f = await fixture(false, true);
+  try {
+    const result = await f.call(
+      "/api/auth/register",
+      "POST",
+      registrationHeaders,
+      { username: "new-member", password: f.password }
+    );
+    assert.equal(result.status, 200);
+    assert.equal(result.headers["Set-Cookie"], undefined);
+    assert.ok(!JSON.stringify(result).includes(f.password));
+    const user = f.db.prepare("SELECT * FROM users").get()!;
+    assert.equal(user.platform_role, "member");
+    assert.notEqual(user.id, "new-member");
+    for (const table of [
+      "memberships",
+      "resource_grants",
+      "credentials",
+      "organizations",
+      "projects"
+    ])
+      assert.equal(f.db.prepare(`SELECT count(*) n FROM ${table}`).get()!.n, 0);
+    const logged = await f.signIn("new-member");
+    assert.equal(logged.status, 200);
+    const cookie = logged.headers["Set-Cookie"]!.split(";")[0]!;
+    assert.equal(
+      (await f.call("/console", "GET", { cookie })).headers.Location,
+      "/onboarding"
+    );
+    assert.equal(
+      (await f.call("/api/access/project/project-a", "GET", { cookie })).status,
+      403
+    );
+    assert.equal(
+      (
+        await f.call("/api/auth/logout", "POST", {
+          cookie,
+          "x-csrf-token": logged.body.data.csrf
+        })
+      ).status,
+      200
+    );
+    assert.equal((await f.call("/api/auth/me", "GET", { cookie })).status, 401);
+    for (const table of ["users", "local_accounts", "audit_events"])
+      assert.ok(
+        !JSON.stringify(f.db.prepare(`SELECT * FROM ${table}`).all()).includes(
+          f.password
+        )
+      );
+    assert.match((await f.call("/login")).body, /href="\/register"/);
+    assert.match(
+      (await f.call("/register")).body,
+      /autocomplete="new-password"/
+    );
+  } finally {
+    f.db.close();
+  }
+});
+
+test("concurrent duplicate registrations roll back identities and grant no existing resources", async () => {
+  const f = await fixture();
+  try {
+    const before = f.db.prepare("SELECT count(*) n FROM users").get()!
+      .n as number;
+    const results = await Promise.all(
+      Array.from({ length: 4 }, () =>
+        f.call("/api/auth/register", "POST", registrationHeaders, {
+          username: "concurrent",
+          password: f.password
+        })
+      )
+    );
+    assert.deepEqual(results.map(r => r.status).sort(), [200, 401, 401, 401]);
+    assert.equal(
+      f.db.prepare("SELECT count(*) n FROM users").get()!.n,
+      before + 1
+    );
+    const logged = await f.signIn("concurrent");
+    const cookie = logged.headers["Set-Cookie"]!.split(";")[0]!;
+    for (const path of [
+      "organization/org-a",
+      "project/project-a",
+      "repository/repo-a"
+    ])
+      assert.equal(
+        (await f.call("/api/access/" + path, "GET", { cookie })).status,
+        403
+      );
+    assert.equal(
+      f.db
+        .prepare("SELECT count(*) n FROM memberships WHERE user_id = ?")
+        .get(logged.body.data.identity.id)!.n,
+      0
+    );
+  } finally {
+    f.db.close();
+  }
+});
+
+test("registration rejects malformed input, authority fields and cross-origin submissions", async () => {
+  const f = await fixture(false, true);
+  try {
+    const body = { username: "ordinary", password: f.password };
+    for (const headers of [
+      {},
+      { ...registrationHeaders, "sec-fetch-site": "cross-site" },
+      { ...registrationHeaders, "sec-fetch-site": "same-site" },
+      {
+        ...registrationHeaders,
+        origin: "https://external.invalid",
+        host: "localhost"
+      }
+    ])
+      assert.equal(
+        (await f.call("/api/auth/register", "POST", headers, body)).status,
+        403
+      );
+    for (const extra of [
+      { userId: "buyer" },
+      { role: "admin" },
+      { organizationId: "org-a" },
+      { permissions: [] }
+    ]) {
+      assert.equal(
+        (
+          await f.call("/api/auth/register", "POST", registrationHeaders, {
+            ...body,
+            ...extra
+          })
+        ).status,
+        400
+      );
+      f.advance(60000);
+    }
+    for (const invalid of [
+      null,
+      [],
+      { ...body, username: "非法" },
+      { ...body, password: randomBytes(2).toString("hex") },
+      { ...body, password: randomBytes(257).toString("hex") },
+      { ...body, username: "x".repeat(65) }
+    ]) {
+      assert.equal(
+        (
+          await f.call(
+            "/api/auth/register",
+            "POST",
+            registrationHeaders,
+            invalid
+          )
+        ).status,
+        400
+      );
+      f.advance(60000);
+    }
+    assert.equal(f.db.prepare("SELECT count(*) n FROM users").get()!.n, 0);
+  } finally {
+    f.db.close();
+  }
+});
+
+test("registration shares password concurrency and rate budgets with login and recovers after errors", async t => {
+  const f = await fixture(false, true);
+  let reject!: (error: Error) => void;
+  const blocked = new Promise<void>((_, fail) => {
+    reject = fail;
+  });
+  const register = t.mock.method(f.accounts, "register", () => blocked);
+  try {
+    const pending = Array.from({ length: 4 }, () =>
+      f.call("/api/auth/register", "POST", registrationHeaders, {
+        username: "bounded",
+        password: f.password
+      })
+    );
+    await setImmediate();
+    assert.equal(register.mock.callCount(), 4);
+    assert.equal((await f.signIn()).status, 429);
+    reject(new Error("Synthetic failure"));
+    for (const result of await Promise.all(pending))
+      assert.equal(result.status, 401);
+    assert.equal(
+      (await f.call("/api/auth/register", "POST", registrationHeaders, {}))
+        .status,
+      429
+    );
+    register.mock.restore();
+    f.advance(60000);
+    assert.equal(
+      (
+        await f.call("/api/auth/register", "POST", registrationHeaders, {
+          username: "bounded",
+          password: f.password
+        })
+      ).status,
+      200
+    );
+  } finally {
+    f.db.close();
+  }
+});
+
+test("registration bounds body size and total read time before hashing", async t => {
+  const f = await fixture(false, true);
+  const register = t.mock.method(f.accounts, "register");
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    assert.equal(
+      (
+        await f.call(
+          "/api/auth/register",
+          "POST",
+          registrationHeaders,
+          Readable.from([Buffer.alloc(4097)])
+        )
+      ).status,
+      401
+    );
+    const stream = new Readable({ read() {} });
+    const pending = f.call(
+      "/api/auth/register",
+      "POST",
+      registrationHeaders,
+      stream
+    );
+    stream.push('{"username":');
+    await setImmediate();
+    t.mock.timers.tick(5000);
+    assert.equal((await pending).status, 401);
+    assert.equal(register.mock.callCount(), 0);
+    assert.equal(f.db.prepare("SELECT count(*) n FROM users").get()!.n, 0);
+  } finally {
+    t.mock.timers.reset();
+    f.db.close();
   }
 });

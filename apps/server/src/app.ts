@@ -14,6 +14,7 @@ import { onboardingRoute } from "./onboarding.js";
 import { renderOnboarding } from "../../web/src/onboarding.js";
 import { Login } from "./login.js";
 import { sessionCookie, webToken } from "../../../packages/auth/src/index.js";
+import { renderRegister } from "../../web/src/register.js";
 import { renderLogin } from "../../web/src/session.js";
 import { Workspaces } from "../../../packages/database/src/workspaces.js";
 import { workspaceRoute } from "./workspaces.js";
@@ -75,6 +76,11 @@ export function handleRequest(
     if (path.startsWith("/api/auth/")) {
       if (!login) throw new ForbiddenError();
       void login.route(request, response, requestId);
+      return;
+    }
+    if (path === "/register" && request.method === "GET") {
+      response.setHeader("Content-Type", "text/html; charset=utf-8");
+      response.end(renderRegister());
       return;
     }
     if (path === "/login" && request.method === "GET") {
@@ -313,6 +319,14 @@ export function handleRequest(
       return;
     }
     const assets: Record<string, [string, string]> = {
+      "/register.js": [
+        "dist/apps/web/src/register.js",
+        "text/javascript; charset=utf-8"
+      ],
+      "/packages/shared/src/accounts.js": [
+        "dist/packages/shared/src/accounts.js",
+        "text/javascript; charset=utf-8"
+      ],
       "/agents.js": [
         "dist/apps/web/src/agents.js",
         "text/javascript; charset=utf-8"

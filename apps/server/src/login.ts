@@ -1,3 +1,4 @@
+import { validAccount } from "../../../packages/shared/src/accounts.js";
 import { IncomingMessage, ServerResponse } from "node:http";
 import {
   Authorization,
@@ -30,6 +31,9 @@ export class Login {
   ): Promise<void> {
     response.setHeader("Cache-Control", "no-store");
     response.setHeader("Content-Type", "application/json; charset=utf-8");
+    const registering =
+      new URL(request.url || "/", "http://localhost").pathname ===
+      "/api/auth/register";
     let audited = false;
     const send = (status: number, data?: unknown) => {
       if (
@@ -50,7 +54,12 @@ export class Login {
             ? { ok: true, data, request_id: requestId }
             : {
                 ok: false,
-                error: { code: "AUTH_FAILED", message: "登录或会话验证失败" },
+                error: {
+                  code: registering ? "REGISTRATION_FAILED" : "AUTH_FAILED",
+                  message: registering
+                    ? "注册未完成，请检查输入、尝试其他用户名或稍后重试"
+                    : "登录或会话验证失败"
+                },
                 request_id: requestId
               }
         )
@@ -58,14 +67,31 @@ export class Login {
     };
     try {
       const path = new URL(request.url || "/", "http://localhost").pathname;
-      if (path === "/api/auth/login" && request.method === "POST") {
+      if (
+        (path === "/api/auth/login" || registering) &&
+        request.method === "POST"
+      ) {
         // JSON plus a custom header prevents cross-origin form/login CSRF. No CORS is enabled.
         if (
           request.headers["content-type"] !== "application/json" ||
-          request.headers["x-octo-login"] !== "1" ||
+          request.headers[registering ? "x-octo-register" : "x-octo-login"] !==
+            "1" ||
           request.headers["sec-fetch-site"] === "cross-site"
         )
           return send(403);
+        if (registering) {
+          const origin = request.headers.origin;
+          const site = request.headers["sec-fetch-site"];
+          if (
+            (site !== undefined && site !== "same-origin" && site !== "none") ||
+            (origin !== undefined &&
+              origin !==
+                `${this.production ? "https" : "http"}://${
+                  request.headers.host
+                }`)
+          )
+            return send(403);
+        }
         if (
           (request.rawHeaders || []).some(
             (v, i) => i % 2 === 0 && v.toLowerCase() === "authorization"
@@ -104,9 +130,24 @@ export class Login {
           clearTimeout(deadline);
         }
         const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+        if (
+          registering &&
+          (!body ||
+            typeof body !== "object" ||
+            Array.isArray(body) ||
+            Object.keys(body).length !== 2 ||
+            !Object.hasOwn(body, "username") ||
+            !Object.hasOwn(body, "password") ||
+            !validAccount(body.username, body.password))
+        )
+          return send(400);
         if (this.active >= 4) return send(429);
         this.active++;
         try {
+          if (registering) {
+            await this.accounts.register(body.username, body.password);
+            return send(200, { next: "/login?registered=1" });
+          }
           const user = await this.accounts.verify(
             body?.username,
             body?.password
