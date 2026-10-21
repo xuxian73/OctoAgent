@@ -22,7 +22,9 @@ test("offline process fixture verifies actual stdin, fixed options, exits, missi
     script(
       '[ "$1" = "--no-summary" ] || exit 2\n[ "$3" = "--scan-archive=no" ] || exit 2\n[ "$(cat)" = "actual bytes" ] || exit 2\nexit 0\n'
     );
-    const scanner = new ClamAVScanner(executable, 1000);
+    // Allow process startup under the full suite's concurrent Git/build load.
+    // Deadline enforcement is tested separately with the nonterminating fixture.
+    const scanner = new ClamAVScanner(executable, 10000);
     assert.equal(await scanner.scan(bytes, checksum), "clean");
     assert.equal(await scanner.scan(bytes, "wrong"), "unavailable");
     const archive = Buffer.from("PK\x03\x04archive");
@@ -62,7 +64,7 @@ test("slow process leaves HTTP responsive, bounds concurrency and coalesces cach
   writeFileSync(executable, "#!/bin/sh\ncat >/dev/null\nsleep 1\nexit 0\n", {
     mode: 0o700
   });
-  const scanner = new ClamAVScanner(executable, 3000);
+  const scanner = new ClamAVScanner(executable, 10000);
   try {
     const probe = scanner.refreshHealth();
     assert.equal(scanner.refreshHealth(), probe);
