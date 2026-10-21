@@ -37,6 +37,21 @@ export class SqliteIdentityStore implements IdentityStore {
       : undefined;
   }
   resource(kind: ResourceKind, id: string): Resource | undefined {
+    if (kind === "dispute") {
+      const row = this.db
+        .prepare(
+          "SELECT r.organization_id, r.project_id FROM dispute_cases d JOIN authorization_resources r ON r.kind='contract' AND r.id=d.contract_id WHERE d.id=?"
+        )
+        .get(id);
+      return row
+        ? {
+            kind,
+            id,
+            organizationId: String(row.organization_id),
+            projectId: String(row.project_id)
+          }
+        : undefined;
+    }
     const row = this.db
       .prepare(
         "SELECT * FROM authorization_resources WHERE kind = ? AND id = ?"
@@ -68,7 +83,16 @@ export class SqliteIdentityStore implements IdentityStore {
       | Role
       | undefined;
   }
-  granted(userId: string, scope: Scope): boolean {
+  granted(userId: string, scope: Scope, now = Date.now()): boolean {
+    if (scope.kind === "dispute")
+      return (
+        scope.action === "read" &&
+        !!this.db
+          .prepare(
+            "SELECT 1 FROM dispute_grants g JOIN users u ON u.id=g.admin_id JOIN dispute_cases d ON d.id=g.case_id JOIN contracts c ON c.id=d.contract_id WHERE g.case_id=? AND g.admin_id=? AND u.platform_role='admin' AND c.status='disputed' AND g.revoked_at IS NULL AND g.expires_at>? AND g.created_at<=?"
+          )
+          .get(scope.resourceId, userId, now, now)
+      );
     return !!this.db
       .prepare(
         "SELECT 1 FROM resource_grants WHERE user_id = ? AND resource_kind = ? AND resource_id = ? AND action = ?"

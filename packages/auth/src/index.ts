@@ -28,6 +28,7 @@ export const permissionMatrix: Readonly<Record<Action, readonly Role[]>> = {
 export const resourceKinds: readonly ResourceKind[] = [
   "organization",
   "project",
+  "dispute",
   "contract",
   "workspace",
   "repository",
@@ -155,7 +156,8 @@ export class Authorization {
       (roles && !roles.includes(role))
     )
       return deny();
-    if (!this.store.granted(identity.responsibleUserId, scope)) return deny();
+    if (!this.store.granted(identity.responsibleUserId, scope, this.now()))
+      return deny();
     if (
       identity.kind === "agent" &&
       (scope.action === "delegate" ||
