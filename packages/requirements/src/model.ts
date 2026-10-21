@@ -28,7 +28,25 @@ export const fields = {
   exclusions: "不可触碰范围"
 } as const;
 export type Field = keyof typeof fields;
+export interface MarketSettings {
+  deadline: number;
+  durationDays: number;
+  risk: "low" | "medium" | "high";
+  allowAgents: boolean;
+}
+export const contextFields: Field[] = [
+  "goal",
+  "deliverables",
+  "acceptance",
+  "permissions",
+  "exclusions",
+  "stack",
+  "taskType",
+  "budgetType",
+  "timeline"
+];
 export interface Draft {
+  market?: MarketSettings;
   values: Partial<Record<Field, string>>;
   publicFields: Field[];
 }
@@ -75,6 +93,27 @@ export function parseDraft(input: unknown): Draft {
     )
   )
     throw new RequirementError("INVALID_BUDGET_TYPE");
+  const market = (input as Draft).market;
+  if (market !== undefined) {
+    if (
+      !market ||
+      !Number.isSafeInteger(market.deadline) ||
+      market.deadline <= 0 ||
+      !Number.isSafeInteger(market.durationDays) ||
+      market.durationDays <= 0 ||
+      !["low", "medium", "high"].includes(market.risk) ||
+      typeof market.allowAgents !== "boolean"
+    )
+      throw new RequirementError("INVALID_MARKET_SETTINGS");
+    result.market = {
+      deadline: market.deadline,
+      durationDays: market.durationDays,
+      risk: market.risk,
+      allowAgents: market.allowAgents
+    };
+    if (contextFields.some(key => !result.publicFields.includes(key)))
+      throw new RequirementError("MARKET_CONTEXT_MUST_BE_PUBLIC");
+  }
   return result;
 }
 export function validate(draft: Draft) {
@@ -101,6 +140,7 @@ export function validate(draft: Draft) {
 export function summary(draft: Draft) {
   const v = draft.values;
   return {
+    ...(draft.market ? { market: draft.market } : {}),
     scope: {
       goal: v.goal,
       outcome: v.outcome,

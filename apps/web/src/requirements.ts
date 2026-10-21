@@ -28,7 +28,7 @@ export function renderRequirementEditor() {
       }<label><input type="checkbox" data-public="${key}">明确允许公开此字段（确认不含敏感信息）</label></fieldset>`;
     })
     .join("");
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>需求草稿 · OctoAgent</title><link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/app.css"></head><body><main id="main" class="requirement-editor"><h1>需求草稿</h1><p>填写目标、预算和验收标准，保存后检查缺失字段。所有文字和附件默认私密。发布需要甲方本人确认。</p><p>使用身份服务签发的会话；凭据仅留在当前页面内存中。</p><label for="session">会话凭据</label><input id="session" type="password" autocomplete="off"><label for="project">项目 ID</label><input id="project"><label for="draft-id">草稿 ID（保存后可复制，下次加载）</label><input id="draft-id"><button id="load" type="button">加载草稿</button><form id="requirement-form">${controls}<button type="submit">保存草稿</button><button id="preview-summary" type="button">检查并查看发布摘要</button></form><p id="status" role="status" aria-live="polite"></p><section id="confirmation" hidden><h2>发布前确认</h2><div id="summary"></div><label><input id="confirmed" type="checkbox">我已确认范围、预算、交付物、验收标准及公开字段</label><button id="publish" type="button">确认发布此版本</button></section><section><h2>版本变更记录</h2><ul id="changes"></ul></section><section><h2>附件元数据</h2><p>仅登记元数据，不上传文件内容。支持 PDF、TXT、PNG、JPG，最大 10 MiB。</p><input id="attachment" type="file" accept=".pdf,.txt,.png,.jpg" aria-label="选择附件"><label><input id="attachment-public" type="checkbox">允许公开附件名称及元数据</label><button id="add-attachment" type="button">保存附件元数据</button><ul id="attachments"></ul></section></main><script type="module" src="/requirements.js"></script></body></html>`;
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>需求草稿 · OctoAgent</title><link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/app.css"></head><body><main id="main" class="requirement-editor"><h1>需求草稿</h1><a href="/market">发现需求与比较报价</a><p>填写目标、预算和验收标准，保存后检查缺失字段。所有文字和附件默认私密。发布需要甲方本人确认。</p><p>使用身份服务签发的会话；凭据仅留在当前页面内存中。</p><label for="session">会话凭据</label><input id="session" type="password" autocomplete="off"><label for="project">项目 ID</label><input id="project"><label for="draft-id">草稿 ID（保存后可复制，下次加载）</label><input id="draft-id"><button id="load" type="button">加载草稿</button><form id="requirement-form"><fieldset><legend>需求发现设置（启用后随发布版本生效）</legend><label><input id="market-enabled" type="checkbox">进入授权项目的需求列表</label><label>报价截止时间<input id="market-deadline" type="datetime-local"></label><label>期望周期（天）<input id="market-days" type="number" min="1"></label><label>风险等级<select id="market-risk"><option value="low">低</option><option value="medium">中</option><option value="high">高</option></select></label><label><input id="market-agents" type="checkbox">允许 Agent</label><p>启用发现需明确公开目标、交付物、验收标准、权限边界、技术栈、任务类型、预算方式和期望时间。</p></fieldset>${controls}<button type="submit">保存草稿</button><button id="preview-summary" type="button">检查并查看发布摘要</button></form><p id="status" role="status" aria-live="polite"></p><section id="confirmation" hidden><h2>发布前确认</h2><div id="summary"></div><label><input id="confirmed" type="checkbox">我已确认范围、预算、交付物、验收标准及公开字段</label><button id="publish" type="button">确认发布此版本</button></section><section><h2>版本变更记录</h2><ul id="changes"></ul></section><section><h2>附件元数据</h2><p>仅登记元数据，不上传文件内容。支持 PDF、TXT、PNG、JPG，最大 10 MiB。</p><input id="attachment" type="file" accept=".pdf,.txt,.png,.jpg" aria-label="选择附件"><label><input id="attachment-public" type="checkbox">允许公开附件名称及元数据</label><button id="add-attachment" type="button">保存附件元数据</button><ul id="attachments"></ul></section></main><script type="module" src="/requirements.js"></script></body></html>`;
 }
 export function mountRequirementEditor(root: Document) {
   const form = root.querySelector<HTMLFormElement>("#requirement-form");
@@ -49,6 +49,16 @@ export function mountRequirementEditor(root: Document) {
       invalidate();
     });
   const draft = (): Draft => ({
+    ...(input("market-enabled")?.checked
+      ? {
+          market: {
+            deadline: new Date(input("market-deadline").value).getTime(),
+            durationDays: Number(input("market-days").value),
+            risk: input("market-risk").value as "low" | "medium" | "high",
+            allowAgents: input("market-agents").checked
+          }
+        }
+      : {}),
     values: Object.fromEntries(
       Object.keys(fields).map(key => [key, input(key).value])
     ),
@@ -80,6 +90,21 @@ export function mountRequirementEditor(root: Document) {
     attachments: { name: string; private: number }[];
     changes: { version: number; changed_fields: string }[];
   }) {
+    if (input("market-enabled")) {
+      input("market-enabled").checked = !!data.draft.market;
+      const market = data.draft.market;
+      input("market-deadline").value = market
+        ? new Date(
+            market.deadline -
+              new Date(market.deadline).getTimezoneOffset() * 60000
+          )
+            .toISOString()
+            .slice(0, 16)
+        : "";
+      input("market-days").value = market ? String(market.durationDays) : "";
+      input("market-risk").value = market?.risk || "low";
+      input("market-agents").checked = market?.allowAgents || false;
+    }
     revision = data.revision;
     input("draft-id").value = data.id;
     for (const key of Object.keys(fields) as Field[])
@@ -171,7 +196,10 @@ export function mountRequirementEditor(root: Document) {
         ["budget", "预算"],
         ["deliverables", "交付物"],
         ["acceptance", "验收标准"],
-        ["attachments", "附件元数据"]
+        ["attachments", "附件元数据"],
+        ...(data.summary.market
+          ? [["market", "发现条件：截止时间、周期、风险与 Agent 权限"]]
+          : [])
       ]) {
         const heading = root.createElement("h3");
         heading.textContent = label!;
@@ -230,6 +258,21 @@ export function mountRequirementEditor(root: Document) {
           private: !input("attachment-public").checked
         }
       );
+      if (input("market-enabled")) {
+        input("market-enabled").checked = !!data.draft.market;
+        const market = data.draft.market;
+        input("market-deadline").value = market
+          ? new Date(
+              market.deadline -
+                new Date(market.deadline).getTimezoneOffset() * 60000
+            )
+              .toISOString()
+              .slice(0, 16)
+          : "";
+        input("market-days").value = market ? String(market.durationDays) : "";
+        input("market-risk").value = market?.risk || "low";
+        input("market-agents").checked = market?.allowAgents || false;
+      }
       revision = data.revision;
       displayAttachments(data.attachments);
       status.textContent = "附件元数据已保存；表单中的编辑已保留，请保存草稿。";
