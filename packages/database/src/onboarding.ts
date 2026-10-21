@@ -43,8 +43,13 @@ export class Onboarding {
       LEFT JOIN account_onboarding n ON n.project_id=p.id WHERE m.user_id=? ORDER BY p.id`
       )
       .all(user)
-      .filter(row => visible("project", String(row.id)))
-      .map(row => ({ ...row, pages: this.pages(token, String(row.id), user) }));
+      .map(row => ({
+        ...row,
+        id: String(row.id),
+        pages: this.pages(token, String(row.id), user)
+      }))
+      // Contract access is independently granted; project read is not required.
+      .filter(row => row.pages.length || visible("project", String(row.id)));
     return {
       organizations,
       projects,
@@ -93,7 +98,10 @@ export class Onboarding {
           throw error;
         }
       });
-    if (contracts.length || allowed("write", ["buyer"]))
+    if (
+      contracts.length ||
+      (allowed("read", ["buyer"]) && allowed("write", ["buyer"]))
+    )
       pages.push("contracts");
     if (
       contracts.some(row =>
