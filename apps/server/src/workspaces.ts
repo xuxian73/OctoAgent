@@ -47,6 +47,16 @@ async function executeRoute(
     }
     let data: unknown;
     if (method === "GET" && path.length === 4) data = service.read(token, id);
+    else if (
+      path.length === 5 &&
+      action === "github" &&
+      ["GET", "POST"].includes(method || "")
+    )
+      data = await service.github(
+        token,
+        id,
+        method === "POST" ? body : undefined
+      );
     else if (method === "POST" && path.length === 5 && action === "commands")
       data = service.command(token, id, body);
     else throw new RequirementError("NOT_FOUND", 404);

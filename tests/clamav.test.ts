@@ -7,6 +7,10 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { ClamAVScanner } from "../packages/security/src/clamav.js";
 
+// Allow process startup under the full suite's parallel load, including OS
+// checks of freshly written executables. Timeout behavior uses its own 20 ms case.
+const fixtureTimeoutMs = 10000;
+
 test("offline process fixture verifies actual stdin, fixed options, exits, missing dependency and timeout", async () => {
   const dir = mkdtempSync(join(tmpdir(), "octo-clam-fixture-"));
   try {
@@ -22,7 +26,7 @@ test("offline process fixture verifies actual stdin, fixed options, exits, missi
     script(
       '[ "$1" = "--no-summary" ] || exit 2\n[ "$3" = "--scan-archive=no" ] || exit 2\n[ "$(cat)" = "actual bytes" ] || exit 2\nexit 0\n'
     );
-    const scanner = new ClamAVScanner(executable, 1000);
+    const scanner = new ClamAVScanner(executable, fixtureTimeoutMs);
     assert.equal(await scanner.scan(bytes, checksum), "clean");
     assert.equal(await scanner.scan(bytes, "wrong"), "unavailable");
     const archive = Buffer.from("PK\x03\x04archive");
@@ -62,7 +66,7 @@ test("slow process leaves HTTP responsive, bounds concurrency and coalesces cach
   writeFileSync(executable, "#!/bin/sh\ncat >/dev/null\nsleep 1\nexit 0\n", {
     mode: 0o700
   });
-  const scanner = new ClamAVScanner(executable, 3000);
+  const scanner = new ClamAVScanner(executable, fixtureTimeoutMs);
   try {
     const probe = scanner.refreshHealth();
     assert.equal(scanner.refreshHealth(), probe);
