@@ -49,7 +49,7 @@ test("unsupported database providers fail without leaking connection data", () =
 });
 
 test("identity credentials and revocation survive closing and reopening the database", async () => {
-  const { Authorization, ForbiddenError, tokenDigest } = await import(
+  const { Authorization, ForbiddenError } = await import(
     "../packages/auth/src/index.js"
   );
   const { seedIdentities } = await import("./fixtures/identity.js");
@@ -72,16 +72,44 @@ test("identity credentials and revocation survive closing and reopening the data
       resourceId: "contract-a",
       action: "read"
     } as const;
-    const token = auth.issueAgentToken(session, "agent-a", [scope]);
+    const agent = database.agents(auth).create(session, {
+      kind: "seller",
+      capabilities: ["typescript"]
+    });
+    const issued = database.agents(auth).issue(session, agent.id, {
+      scopes: [scope],
+      ttlMs: 900000,
+      confirmed: true
+    });
+    const token = issued.token;
     database.close();
     database = openDatabase(`file:${path}`);
     auth = new Authorization(database.identities, () => 1000);
     assert.equal(auth.authorize(token, scope).identity.kind, "agent");
-    auth.revoke(session, tokenDigest(token));
+    const listed = database.agents(auth).list(session);
+    const persisted = listed.agents.find(value => value.id === agent.id)!;
+    assert.deepEqual(persisted.capabilities, ["typescript"]);
+    assert.deepEqual(persisted.credentials, [
+      {
+        id: issued.id,
+        scopes: [scope],
+        expiresAt: 901000,
+        revoked: false
+      }
+    ]);
+    assert.ok(!JSON.stringify(listed).includes(token));
+    database.agents(auth).revoke(session, agent.id, issued.id);
     database.close();
     database = openDatabase(`file:${path}`);
     auth = new Authorization(database.identities, () => 1000);
     assert.throws(() => auth.authorize(token, scope), ForbiddenError);
+    const listedAfterReopen = database.agents(auth).list(session);
+    assert.equal(
+      listedAfterReopen.agents.find(value => value.id === agent.id)!
+        .credentials[0]!.revoked,
+      true
+    );
+    assert.ok(!JSON.stringify(listedAfterReopen).includes(token));
   } finally {
     database.close();
     rmSync(directory, { recursive: true, force: true });
