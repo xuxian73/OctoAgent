@@ -14,7 +14,7 @@ export class Audit {
     const c = securityContext.getStore() || requestContext();
     this.db
       .prepare(
-        "INSERT INTO audit_events(request_id,actor_id,tenant_id,scope,object_id,event,result,summary,created_at,object_type,target_subject) VALUES (?,?,?,?,?,?,?,?,?,?,?)"
+        "INSERT INTO audit_events(request_id,actor_id,tenant_id,scope,object_id,event,result,summary,created_at,object_type,target_subject,permission,permission_action,permission_expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
       )
       .run(
         c.requestId,
@@ -27,7 +27,10 @@ export class Audit {
         "业务调用；不记录输入、输出或错误原文",
         Date.now(),
         object?.type || "none",
-        object?.targetSubject || null
+        object?.targetSubject || null,
+        object?.permissionChange?.permission ?? null,
+        object?.permissionChange?.action ?? null,
+        object?.permissionChange?.expiresAt ?? null
       );
   }
 }

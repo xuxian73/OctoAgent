@@ -7,6 +7,11 @@ export interface AuditObject {
   type: string;
   id: string;
   targetSubject?: string;
+  permissionChange?: {
+    permission: string;
+    action: "grant" | "revoke";
+    expiresAt: number;
+  };
 }
 export interface RequestContext {
   object?: AuditObject;

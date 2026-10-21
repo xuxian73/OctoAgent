@@ -279,3 +279,7 @@ BEGIN SELECT RAISE(ABORT, 'immutable audit'); END;
 
 ALTER TABLE audit_events ADD COLUMN object_type TEXT NOT NULL DEFAULT 'none';
 ALTER TABLE audit_events ADD COLUMN target_subject TEXT;
+
+ALTER TABLE audit_events ADD COLUMN permission TEXT;
+ALTER TABLE audit_events ADD COLUMN permission_action TEXT CHECK (permission_action IN ('grant', 'revoke'));
+ALTER TABLE audit_events ADD COLUMN permission_expires_at INTEGER;

@@ -24,10 +24,38 @@ export class Workspaces {
       db,
       auth,
       ["read", "inspect", "command"],
-      (_method, args) => ({
-        type: "contract",
-        id: args[1] as string
-      })
+      (method, args, output) => {
+        const object = { type: "contract", id: args[1] as string };
+        if (
+          method !== "command" ||
+          (args[2] as Record<string, unknown>).action !== "authorize"
+        )
+          return object;
+        // Use only the validated, persisted result, including on idempotent replay.
+        const { result } = output as {
+          result: {
+            actor: string;
+            permission: string;
+            expiresAt: number;
+            revoked: boolean;
+          };
+        };
+        return {
+          ...object,
+          targetSubject:
+            (result.actor ===
+            db
+              .prepare("SELECT seller_id FROM contracts WHERE id = ?")
+              .get(object.id)?.seller_id
+              ? "user:"
+              : "agent:") + result.actor,
+          permissionChange: {
+            permission: result.permission,
+            action: result.revoked ? "revoke" : "grant",
+            expiresAt: result.expiresAt
+          }
+        };
+      }
     );
   }
   private access(token: string, id: string, write = false) {
@@ -155,15 +183,16 @@ export class Workspaces {
           ttl > 900000
         )
           throw new RequirementError("INVALID_TTL");
+        const expiresAt = this.now() + ttl;
         this.db
           .prepare(
             "INSERT INTO delivery_permissions VALUES (?,?,?,?) ON CONFLICT(contract_id,actor_id,permission) DO UPDATE SET expires_at = excluded.expires_at"
           )
-          .run(id, actor, permission, this.now() + ttl);
+          .run(id, actor, permission, expiresAt);
         result = {
           actor,
           permission,
-          expiresAt: this.now() + ttl,
+          expiresAt,
           revoked: ttl === 0
         };
       } else if (sensitive.includes(action)) {

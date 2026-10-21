@@ -438,3 +438,107 @@ test("commits preserve original whitespace, newlines and empty files", () => {
     f.db.close();
   }
 });
+
+test("permission audit distinguishes validated subjects, grants, revocations and expiry", () => {
+  const f = fixture();
+  try {
+    const change = (
+      actorId: string,
+      permission: string,
+      ttlMs: number,
+      requestKey: string
+    ) =>
+      f.command(
+        "authorize",
+        { actorId, permission, ttlMs, requestKey, confirmed: true },
+        f.buyer
+      );
+    change("seller", "branch", 2000, "seller-grant");
+    change("agent-a", "artifact", 3000, "agent-grant");
+    change("agent-a", "artifact", 0, "agent-revoke");
+    change("agent-a", "artifact", 3000, "agent-grant");
+    const rows = f.db
+      .prepare(
+        "SELECT * FROM audit_events WHERE event = 'Workspaces.command.authorize' ORDER BY sequence"
+      )
+      .all();
+    assert.equal(rows.length, 4);
+    assert.deepEqual(
+      rows.map(row => [
+        row.target_subject,
+        row.permission,
+        row.permission_action,
+        row.permission_expires_at
+      ]),
+      [
+        ["user:seller", "branch", "grant", 3000],
+        ["agent:agent-a", "artifact", "grant", 4000],
+        ["agent:agent-a", "artifact", "revoke", 1000],
+        ["agent:agent-a", "artifact", "grant", 4000]
+      ]
+    );
+    for (const row of rows) {
+      assert.equal(row.actor_id, "user:buyer");
+      assert.equal(row.object_type, "contract");
+      assert.equal(row.object_id, f.id);
+      assert.equal(row.result, "success");
+      assert.ok(row.request_id);
+      assert.ok(
+        JSON.parse(String(row.scope)).some(
+          (scope: { resourceId: string; action: string }) =>
+            scope.resourceId === f.id && scope.action === "write"
+        )
+      );
+      assert.equal(row.scope, rows[0]!.scope);
+    }
+    // Replaying an earlier grant preserves its audit details without undoing revocation.
+    assert.equal(
+      f.db
+        .prepare(
+          "SELECT expires_at FROM delivery_permissions WHERE actor_id = 'agent-a' AND permission = 'artifact'"
+        )
+        .get()!.expires_at,
+      1000
+    );
+    for (const [actor, permission, ttl] of [
+      ["outsider", "branch", 1000],
+      ["agent-a", "invalid", 1000],
+      ["agent-a", "branch", -1]
+    ] as const) {
+      assert.throws(() => change(actor, permission, ttl, "rejected"));
+      const rejected = f.db
+        .prepare("SELECT * FROM audit_events ORDER BY sequence DESC LIMIT 1")
+        .get()!;
+      assert.equal(rejected.result, "rejected");
+      for (const key of [
+        "target_subject",
+        "permission",
+        "permission_action",
+        "permission_expires_at"
+      ])
+        assert.equal(rejected[key], null);
+    }
+    assert.throws(
+      () => f.db.exec("UPDATE audit_events SET permission = 'commit'"),
+      /immutable/
+    );
+    assert.throws(() => f.db.exec("DELETE FROM audit_events"), /immutable/);
+    f.db.exec(
+      "CREATE TRIGGER fail_permission_audit BEFORE INSERT ON audit_events WHEN NEW.event = 'Workspaces.command.authorize' AND NEW.result = 'success' BEGIN SELECT RAISE(ABORT, 'audit unavailable'); END"
+    );
+    assert.throws(
+      () => change("seller", "branch", 5000, "rollback"),
+      /audit unavailable/
+    );
+    assert.equal(
+      f.db
+        .prepare(
+          "SELECT expires_at FROM delivery_permissions WHERE actor_id = 'seller' AND permission = 'branch'"
+        )
+        .get()!.expires_at,
+      3000
+    );
+  } finally {
+    f.db.close();
+  }
+});
