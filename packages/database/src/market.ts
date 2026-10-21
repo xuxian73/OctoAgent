@@ -369,8 +369,8 @@ export class Market {
     return results;
   }
   detail(token: string, id: string) {
-    const { draft } = this.task(token, id);
-    if (draft.market!.deadline <= this.now()) throw new ForbiddenError();
+    // Task authorization preserves management and existing participation after closing.
+    this.task(token, id);
     return { ...this.projection(id), timeline: this.timeline(token, id) };
   }
   private projection(id: string) {

@@ -157,6 +157,8 @@ const validation = z.strictObject({
   risks: z.array(z.string())
 });
 const attachment = z.strictObject({
+  hasBytes: z.literal(0).optional(),
+  scan_status: z.literal("legacy_metadata_only").optional(),
   id,
   name: z.string(),
   mime: z.string(),
@@ -272,12 +274,17 @@ const pullRequest = z.strictObject({
   summary: z.string()
 });
 const artifact = z.strictObject({
+  fileId: z.string().optional(),
+  milestoneId: z.string().optional(),
+  simulated: z.boolean().optional(),
+  hasBytes: z.boolean().optional(),
   sha: text,
   name: text,
   checksum: text,
   size: integer
 });
 const submission = z.strictObject({
+  simulated: z.boolean().optional(),
   milestoneId: id,
   sha: text,
   version: integer,

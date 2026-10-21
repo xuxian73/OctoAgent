@@ -863,6 +863,7 @@ test("market browser controls submit a confirmed bid and render two comparison c
       elements.get("comparison")!.children[0]!.children[0]!.children.length,
       3
     );
+    f.advance(899000);
     const question = f.market.clarify(f.seller, id, "验收", "请说明命令");
     await click("detail");
     const replyButton = elements

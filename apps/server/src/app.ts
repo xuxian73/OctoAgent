@@ -1,3 +1,5 @@
+import { Files } from "../../../packages/database/src/files.js";
+import { fileRoute } from "./files.js";
 import { Agents } from "../../../packages/database/src/agents.js";
 import { agentRoute } from "./agents.js";
 import { renderAgents } from "../../web/src/agents.js";
@@ -65,7 +67,8 @@ export function handleRequest(
   login?: Login,
   onboarding?: Onboarding,
   disputes?: Disputes,
-  agents?: Agents
+  agents?: Agents,
+  files?: Files
 ): void {
   const requestId = randomUUID();
   response.setHeader("X-Request-Id", requestId);
@@ -109,6 +112,10 @@ export function handleRequest(
       throw new ForbiddenError();
     if (path === "/api/agents" || path.startsWith("/api/agents/")) {
       void agentRoute(request, response, requestId, agents);
+      return;
+    }
+    if (path === "/api/files" || path.startsWith("/api/files/")) {
+      void fileRoute(request, response, requestId, files);
       return;
     }
     const page = path.slice(1);
@@ -161,7 +168,9 @@ export function handleRequest(
           renderApplication(
             renderMarket(),
             "market",
-            (context.projects as unknown) as ApplicationProject[]
+            (context.projects as unknown) as ApplicationProject[],
+            undefined,
+            true
           )
         );
         return;
@@ -392,6 +401,10 @@ export function handleRequest(
       ],
       "/packages/requirements/src/model.js": [
         "dist/packages/requirements/src/model.js",
+        "text/javascript; charset=utf-8"
+      ],
+      "/files.js": [
+        "dist/apps/web/src/files.js",
         "text/javascript; charset=utf-8"
       ],
       "/tokens.css": ["apps/web/tokens.css", "text/css; charset=utf-8"],

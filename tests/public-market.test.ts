@@ -235,7 +235,11 @@ test("independent registered sellers discover only publications, clarify, confir
     f.advance();
     assert.throws(() => f.req.publicView(id), /NOT_FOUND/);
     assert.deepEqual(f.market.search(f.seller.token, ""), []);
-    assert.throws(() => f.market.detail(f.seller.token, id), ForbiddenError);
+    assert.equal(f.market.detail(f.seller.token, id).version, 2);
+    assert.throws(
+      () => f.market.detail(f.competitor.token, id),
+      ForbiddenError
+    );
     assert.throws(() => f.market.draft(f.seller.token, id, proposal));
     assert.equal(f.market.withdraw(f.seller.token, bid.id).status, "withdrawn");
   } finally {
@@ -370,6 +374,161 @@ test("task scopes, responsible principals, visibility and participation revocati
       "FORBIDDEN"
     );
   } finally {
+    f.db.close();
+  }
+});
+
+test("closed bidding preserves buyer MCP management and participant clarification access", async () => {
+  const f = await setup();
+  try {
+    const id = f.create();
+    f.publish(id);
+    const bid = f.market.draft(f.seller.token, id, proposal);
+    f.market.submit(
+      f.seller.token,
+      bid.id,
+      f.market.preview(f.seller.token, bid.id).confirmation,
+      true
+    );
+    // Management Agent regression uses an explicitly delegated buyer project.
+    // Independent sellers still receive no project grants.
+    f.db
+      .prepare("INSERT INTO resource_grants VALUES (?,'project',?,'delegate')")
+      .run(f.buyer.id, f.project.projectId!);
+    const agent = f.agents.create(f.buyer.token, {
+      kind: "buyer",
+      capabilities: []
+    });
+    const token = f.auth.issueAgentToken(
+      f.buyer.token,
+      agent.id,
+      (["read", "write"] as const).map(action => ({
+        kind: "project" as const,
+        resourceId: f.project.projectId!,
+        action
+      }))
+    );
+    f.advance();
+    for (const name of ["list_bids", "compare_bids"]) {
+      const result = f.mcp.call(token, name, { request_id: name, task_id: id });
+      assert.equal(result.error, undefined);
+      assert.equal((result.data as unknown[]).length, 1);
+    }
+    const result = f.mcp.call(token, "ask_bidder_question", {
+      request_id: "closed-question",
+      task_id: id,
+      recipient: f.seller.id,
+      topic: "验收",
+      text: "请说明证据"
+    });
+    assert.equal(result.error, undefined);
+    const question = f.market
+      .detail(f.seller.token, id)
+      .timeline.find(e => e.kind === "question")!;
+    f.market.answer(
+      f.seller.token,
+      id,
+      question.sequence,
+      "检查报告",
+      "离线检查",
+      "无"
+    );
+    assert.ok(
+      f.market.detail(f.buyer.token, id).timeline.some(e => e.kind === "answer")
+    );
+    assert.deepEqual(f.market.search(f.seller.token, ""), []);
+    assert.throws(
+      () => f.market.detail(f.competitor.token, id),
+      ForbiddenError
+    );
+    assert.throws(
+      () => f.market.draft(f.seller.token, id, proposal),
+      /BIDDING_CLOSED/
+    );
+  } finally {
+    f.db.close();
+  }
+});
+
+test("dual-role seller with an owned project searches other organizations from the public market", async () => {
+  const { renderApplication } = await import("../apps/web/src/application.js");
+  const { renderMarket, mountMarket } = await import(
+    "../apps/web/src/market.js"
+  );
+  const f = await setup();
+  const original = globalThis.fetch;
+  try {
+    const own = new Onboarding(f.db, f.auth).create(f.seller.token, {
+      role: "buyer",
+      organizationName: "乙方自己的组织",
+      projectName: "自己的项目"
+    });
+    assert.ok("projectId" in own);
+    const id = f.create();
+    f.publish(id);
+    const html = renderApplication(
+      renderMarket(),
+      "market",
+      [
+        {
+          id: own.projectId!,
+          organizationId: own.organizationId!,
+          name: "自己的项目",
+          pages: ["market"]
+        }
+      ],
+      undefined,
+      true
+    );
+    const selected = html.match(/<option value="([^"]*)" selected>/);
+    assert.ok(selected);
+    assert.equal(selected[1], "");
+    class Element extends EventTarget {
+      value = "";
+      textContent = "";
+      children: Element[] = [];
+      append(...children: Element[]) {
+        this.children.push(...children);
+      }
+      replaceChildren() {
+        this.children = [];
+      }
+    }
+    const elements = new Map<string, Element>();
+    for (const match of html.matchAll(/id="([^"]+)"/g))
+      elements.set(match[1]!, new Element());
+    elements.get("project")!.value = selected[1]!;
+    const root = ({
+      getElementById: (id: string) => elements.get(id),
+      createElement: () => new Element()
+    } as unknown) as Document;
+    globalThis.fetch = (async (path: string) => {
+      if (path === "/api/auth/me")
+        return {
+          ok: true,
+          json: async () => ({ data: { csrf: "synthetic-csrf" } })
+        } as Response;
+      const query = new URL(path, "http://localhost").searchParams;
+      assert.equal(query.get("projectId"), "");
+      const results = f.market.search(
+        f.seller.token,
+        query.get("projectId") || ""
+      );
+      assert.deepEqual(
+        results.map(row => row.id),
+        [id]
+      );
+      return { json: async () => ({ ok: true, data: results }) } as Response;
+    }) as typeof fetch;
+    mountMarket(root);
+    elements.get("search")!.dispatchEvent(new Event("click"));
+    for (let i = 0; i < 5; i++)
+      await new Promise<void>(resolve => setImmediate(resolve));
+    assert.equal(elements.get("status")!.textContent, "操作完成");
+    assert.equal(elements.get("results")!.children.length, 1);
+    assert.deepEqual(f.market.search(f.seller.token, own.projectId!), []);
+  } finally {
+    globalThis.fetch = original;
     f.db.close();
   }
 });
