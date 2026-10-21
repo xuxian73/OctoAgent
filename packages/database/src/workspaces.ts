@@ -127,11 +127,13 @@ export class Workspaces {
     this.db.exec(nested ? "SAVEPOINT workspaces_operation" : "BEGIN IMMEDIATE");
     try {
       const { contract, access, state } = this.access(token, id, true);
-      if (contract.status !== "active")
+      const action = text(input.action);
+      // Revocation must remain available when delivery is frozen or ended.
+      const revoking = action === "authorize" && input.ttlMs === 0;
+      if (contract.status !== "active" && !revoking)
         throw new RequirementError("CONTRACT_NOT_ACTIVE", 409);
       if (input.version !== contract.version)
         throw new RequirementError("STALE_CONTRACT", 409);
-      const action = text(input.action);
       const key = text(input.requestKey);
       const sensitive = ["deploy", "migrate", "delete", "expand_permissions"];
       const required: Record<string, Permission> = {

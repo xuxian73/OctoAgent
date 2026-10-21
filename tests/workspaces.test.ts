@@ -1,3 +1,5 @@
+import { FakeGitHubProvider } from "../packages/delivery/src/github.js";
+import { FakeScanner } from "../packages/security/src/index.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { setup } from "./fixtures/contracts.js";
@@ -11,7 +13,12 @@ function fixture() {
   const f = setup();
   f.activate();
   const id = f.current().id;
-  const service = new Workspaces(f.db, f.auth, () => 1000);
+  const service = new Workspaces(
+    f.db,
+    f.auth,
+    () => 1000,
+    new FakeGitHubProvider(new FakeScanner())
+  );
   const agent = f.auth.issueAgentToken(
     f.seller,
     "agent-a",
@@ -555,3 +562,89 @@ test("permission audit distinguishes validated subjects, grants, revocations and
     f.db.close();
   }
 });
+
+for (const status of ["paused", "disputed", "cancelled"]) {
+  for (const legacy of [true, false]) {
+    test(`${status} contracts allow explicit revocation of ${
+      legacy ? "legacy" : "expiring"
+    } delegation`, () => {
+      const f = fixture();
+      try {
+        const grant = {
+          actorId: "seller",
+          permission: "delegate",
+          ttlMs: 900000,
+          confirmed: true,
+          requestKey: "delegate-grant"
+        };
+        if (!legacy) f.command("authorize", grant, f.buyer);
+        // The legacy fixture has a permanent resource grant and a live Agent.
+        assert.equal(f.contracts.read(f.agent, f.id).id, f.id);
+        f.db
+          .prepare("UPDATE contracts SET status=? WHERE id=?")
+          .run(status, f.id);
+        const revoke = { ...grant, ttlMs: 0, requestKey: "delegate-revoke" };
+        for (const token of [f.seller, f.second, f.agent])
+          assert.throws(
+            () => f.command("authorize", revoke, token),
+            ForbiddenError
+          );
+        assert.throws(
+          () =>
+            f.command("authorize", { ...revoke, confirmed: false }, f.buyer),
+          ForbiddenError
+        );
+        assert.throws(
+          () => f.command("authorize", { ...revoke, version: 0 }, f.buyer),
+          /STALE_CONTRACT/
+        );
+        assert.throws(
+          () => f.command("authorize", grant, f.buyer),
+          /CONTRACT_NOT_ACTIVE/
+        );
+        const result = f.command("authorize", revoke, f.buyer);
+        assert.deepEqual(f.command("authorize", revoke, f.buyer), result);
+        assert.throws(
+          () =>
+            f.auth.issueAgentToken(f.seller, "agent-a", [
+              { kind: "contract", resourceId: f.id, action: "read" }
+            ]),
+          ForbiddenError
+        );
+        assert.throws(() => f.contracts.read(f.agent, f.id), ForbiddenError);
+        assert.throws(() => f.service.read(f.agent, f.id), ForbiddenError);
+        assert.throws(
+          () =>
+            f.command(
+              "create_workspace_branch",
+              { branch: "blocked" },
+              f.seller
+            ),
+          /CONTRACT_NOT_ACTIVE/
+        );
+        const audit = f.db
+          .prepare(
+            "SELECT * FROM audit_events WHERE event='Workspaces.command.authorize' AND permission_action='revoke' ORDER BY sequence DESC LIMIT 1"
+          )
+          .get()!;
+        assert.equal(audit.actor_id, "user:buyer");
+        assert.equal(audit.target_subject, "user:seller");
+        assert.equal(audit.permission, "delegate");
+        assert.equal(audit.permission_expires_at, 1000);
+        assert.equal(audit.result, "success");
+        // Resuming delivery must not restore the old grant or permit its replay.
+        f.db
+          .prepare("UPDATE contracts SET status='active' WHERE id=?")
+          .run(f.id);
+        assert.throws(() => f.contracts.read(f.agent, f.id), ForbiddenError);
+        if (!legacy)
+          assert.throws(
+            () => f.command("authorize", grant, f.buyer),
+            ForbiddenError
+          );
+      } finally {
+        f.db.close();
+      }
+    });
+  }
+}

@@ -16,7 +16,7 @@ const types: Record<string, string> = {
   zip: "application/zip"
 };
 export function renderFiles() {
-  return `<section id="private-files"><h2>私有文件</h2><p>文件隔离保存；仅 clean 可下载。测试扫描明确标记模拟，不代表真实安全扫描。ZIP 不解包。每版本最多 20 个文件，每个最多 10 MiB。</p><input type="file" id="private-file" accept=".ts,.txt,.md,.json,.zip"><button id="file-upload" type="button">上传真实字节</button><button id="file-refresh" type="button">刷新文件状态</button><progress id="file-progress" max="100" value="0"></progress><p id="file-status" role="status"></p><ul id="file-list"></ul></section>`;
+  return `<section id="private-files"><h2>私有文件</h2><p>文件隔离保存；仅当前字节通过真实扫描后可下载。测试扫描明确标记模拟，不代表真实安全扫描。ZIP 不解包。每版本最多 20 个文件，每个最多 10 MiB。</p><input type="file" id="private-file" accept=".ts,.txt,.md,.json,.zip"><button id="file-upload" type="button">上传真实字节</button><button id="file-refresh" type="button">刷新文件状态</button><progress id="file-progress" max="100" value="0"></progress><p id="file-status" role="status"></p><ul id="file-list"></ul></section>`;
 }
 export function mountFiles(root: Document, binding: () => UploadBinding) {
   if (!root.getElementById("private-files")) return;
@@ -59,8 +59,24 @@ export function mountFiles(root: Document, binding: () => UploadBinding) {
       const li = root.createElement("li");
       li.textContent = `${file.name} · ${file.size} 字节 · SHA-256 ${
         file.checksum
-      } · ${file.scan_status}${file.simulated ? "（模拟扫描）" : ""} `;
-      if (file.scan_status === "clean") {
+      } · ${({
+        quarantined: "隔离待扫描",
+        scanning: "扫描中",
+        clean: "通过",
+        rejected: "已拒绝",
+        unavailable: "扫描不可用，可重试"
+      } as Record<string, string>)[file.scan_status] || file.scan_status} · ${
+        file.scanner
+      } · ${
+        file.scanned_at
+          ? new Date(file.scanned_at).toISOString()
+          : "尚无扫描时间"
+      }${file.simulated ? "（模拟扫描）" : ""} `;
+      if (
+        file.scan_status === "clean" &&
+        !file.simulated &&
+        file.scan_checksum === file.checksum
+      ) {
         const button = root.createElement("button");
         button.textContent = "下载";
         button.onclick = () =>
@@ -103,6 +119,18 @@ export function mountFiles(root: Document, binding: () => UploadBinding) {
           });
         li.append(button);
       } else li.append("阻塞：尚未通过扫描，不能下载或用于交付");
+      if (
+        ["unavailable", "quarantined", "scanning"].includes(file.scan_status)
+      ) {
+        const retry = root.createElement("button");
+        retry.textContent = "重试扫描";
+        retry.onclick = () =>
+          void run(async () => {
+            await apiRequest(`/api/files/${file.id}/scan`, "POST");
+            await refresh();
+          });
+        li.append(retry);
+      }
       el("file-list").append(li);
     }
   }

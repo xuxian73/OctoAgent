@@ -26,7 +26,12 @@ function fixture() {
   seedIdentities(db);
   const auth = new Authorization(new SqliteIdentityStore(db));
   const token = auth.issueUserSession("buyer");
-  return { db, auth, token, service: new Requirements(db, auth) };
+  return {
+    db,
+    auth,
+    token,
+    service: new Requirements(db, auth, Date.now, new FakeScanner())
+  };
 }
 test("audit is append-only, correlated, excludes arbitrary private text and fails atomically", () => {
   const f = fixture();

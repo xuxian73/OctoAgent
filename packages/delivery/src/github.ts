@@ -1,4 +1,4 @@
-import { Scanner, FakeScanner, scanFile } from "../../security/src/index.js";
+import { Scanner, scanFile } from "../../security/src/index.js";
 import { createHash } from "node:crypto";
 import { ForbiddenError } from "../../auth/src/index.js";
 import { RequirementError } from "../../requirements/src/model.js";
@@ -95,7 +95,7 @@ export interface GitHubProvider {
 }
 // Deterministic, isolated virtual Git repository. No shell, network, or production adapter.
 export class FakeGitHubProvider implements GitHubProvider {
-  constructor(private scanner: Scanner = new FakeScanner()) {}
+  constructor(private scanner: Scanner = { scan: () => "unavailable" }) {}
   authorize(permission: Permission, granted: readonly string[]) {
     if (!granted.includes(permission)) throw new ForbiddenError();
   }

@@ -1,3 +1,5 @@
+import { FakeGitHubProvider } from "../../delivery/src/github.js";
+import { FakeScanner } from "../../security/src/index.js";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -42,10 +44,15 @@ export async function runScenario(db: DatabaseSync): Promise<Report> {
   const services = {
     auth,
     onboarding: new Onboarding(db, auth),
-    requirements: new Requirements(db, auth, () => now),
+    requirements: new Requirements(db, auth, () => now, new FakeScanner()),
     market: new Market(db, auth, () => now),
     contracts: new Contracts(db, auth, () => now),
-    workspaces: new Workspaces(db, auth, () => now),
+    workspaces: new Workspaces(
+      db,
+      auth,
+      () => now,
+      new FakeGitHubProvider(new FakeScanner())
+    ),
     requests: new McpRequests(db)
   };
   const mcp = new MarketplaceMcp(services, () => now);
