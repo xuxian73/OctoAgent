@@ -14,6 +14,56 @@ import { SqliteIdentityStore } from "../packages/database/src/identity.js";
 import { MarketplaceMcp } from "../packages/mcp/src/index.js";
 import { Workspaces } from "../packages/database/src/workspaces.js";
 import { McpRequests } from "../packages/database/src/mcp.js";
+import { Onboarding } from "../packages/database/src/onboarding.js";
+
+test("authenticated Agent management page reaches its forms through the application router", () => {
+  const f = setup();
+  try {
+    f.db.prepare("INSERT INTO users VALUES (?, 'member')").run("new-owner");
+    const newOwner = f.auth.issueUserSession("new-owner");
+    const agent = f.auth.issueAgentToken(f.seller, "agent-a");
+    for (const token of [f.seller, f.buyer, newOwner, agent, ""]) {
+      const request = {
+        url: "/agents",
+        method: "GET",
+        headers: {},
+        rawHeaders: ["Cookie", "octo_session=" + token]
+      } as IncomingMessage;
+      let html = "";
+      const response = {
+        statusCode: 200,
+        setHeader() {},
+        end(body: string) {
+          html = body;
+        }
+      };
+      handleRequest(
+        request,
+        (response as unknown) as ServerResponse,
+        f.auth,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        new Onboarding(f.db, f.auth)
+      );
+      if (token === agent || token === "") {
+        assert.equal(response.statusCode, 303);
+        assert.doesNotMatch(html, /id="create-agent"/);
+        continue;
+      }
+      assert.equal(response.statusCode, 200);
+      assert.match(html, /id="create-agent"/);
+      assert.match(html, /id="issue-agent"/);
+      assert.match(html, /src="\/agents.js"/);
+      assert.match(html, /id="logout"/);
+      assert.doesNotMatch(html, /id="onboarding"/);
+    }
+  } finally {
+    f.db.close();
+  }
+});
 
 test("owner API creates agents, confirms bounded scopes, isolates credentials and revokes MCP immediately", async () => {
   const f = setup();
@@ -72,6 +122,19 @@ test("owner API creates agents, confirms bounded scopes, isolates credentials an
     const path = "/api/agents/" + agent.id + "/credentials";
     const scope = { kind: "project", resourceId: "project-a", action: "read" };
     const input = { scopes: [scope], ttlMs: MAX_AGENT_TTL_MS, confirmed: true };
+    for (const invalid of [
+      null,
+      [],
+      { ...scope, action: ["read"] },
+      { ...scope, resourceId: 1 },
+      { ...scope, kind: null },
+      { ...scope, responsibleUserId: "buyer" }
+    ]) {
+      assert.equal(
+        (await call(path, "POST", { ...input, scopes: [invalid] })).status,
+        400
+      );
+    }
     assert.equal(
       (await call(path, "POST", { ...input, confirmed: false })).status,
       400

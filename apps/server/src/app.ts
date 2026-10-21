@@ -122,7 +122,7 @@ export function handleRequest(
       }
       const context = onboarding?.list(webToken(request));
       response.setHeader("Content-Type", "text/html; charset=utf-8");
-      if (path === "/onboarding" || path === "/agents") {
+      if (path === "/onboarding") {
         response.end(renderOnboarding());
         return;
       }

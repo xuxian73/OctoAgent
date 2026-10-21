@@ -135,6 +135,12 @@ export class Agents {
       if (!scope || typeof scope !== "object" || Array.isArray(scope))
         throw new RequirementError("INVALID_SCOPE");
       this.fields(scope, ["kind", "resourceId", "action"]);
+      if (
+        typeof scope.kind !== "string" ||
+        typeof scope.resourceId !== "string" ||
+        typeof scope.action !== "string"
+      )
+        throw new RequirementError("INVALID_SCOPE");
     }
     const token = this.auth.issueAgentToken(
       session,
