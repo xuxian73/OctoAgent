@@ -323,7 +323,14 @@ const workspaceDetail = z.strictObject({
   ),
   auditEventReferences: z.array(integer)
 });
-const common = { request_id: id, status: text, next_step: text, summary: text };
+const common = {
+  request_id: id,
+  status: text,
+  next_step: text,
+  summary: text,
+  risk_warning: text,
+  content_trust: z.literal("untrusted")
+};
 const confirmationShape = z.strictObject({
   scope: text,
   affected_objects: z.array(id).min(1),
@@ -355,6 +362,8 @@ export const outputSchema = z.union([
   pending(confirmationShape)
 ]);
 export interface Envelope {
+  risk_warning: string;
+  content_trust: "untrusted";
   request_id: string;
   status: string;
   next_step: string;

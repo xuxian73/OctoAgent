@@ -1,3 +1,4 @@
+import { Scanner, FakeScanner, scanFile } from "../../security/src/index.js";
 import { createHash } from "node:crypto";
 import { ForbiddenError } from "../../auth/src/index.js";
 import { RequirementError } from "../../requirements/src/model.js";
@@ -85,6 +86,7 @@ export interface GitHubProvider {
 }
 // Deterministic, isolated virtual Git repository. No shell, network, or production adapter.
 export class FakeGitHubProvider implements GitHubProvider {
+  constructor(private scanner: Scanner = new FakeScanner()) {}
   authorize(permission: Permission, granted: readonly string[]) {
     if (!granted.includes(permission)) throw new ForbiddenError();
   }
@@ -174,6 +176,15 @@ export class FakeGitHubProvider implements GitHubProvider {
       throw new RequirementError("COMMIT_REQUIRED");
     safePath(name);
     text(content);
+    scanFile(
+      {
+        name,
+        mime: "text/plain",
+        size: Buffer.byteLength(content),
+        content: Buffer.from(content)
+      },
+      this.scanner
+    );
     if (checksum(content) !== digest)
       throw new RequirementError("CHECKSUM_MISMATCH");
     const artifact = {

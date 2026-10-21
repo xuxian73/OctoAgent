@@ -1,3 +1,4 @@
+import { requestContext, securityContext } from "../../security/src/index.js";
 import { createHash, randomBytes } from "node:crypto";
 import { IncomingMessage } from "node:http";
 import {
@@ -161,13 +162,26 @@ export class Authorization {
         !credential.scopes.some(value => sameScope(value, scope)))
     )
       return deny();
+    const context = securityContext.getStore();
+    if (context) {
+      context.actor = identity.kind + ":" + identity.id;
+      context.tenant = resource.organizationId;
+      if (!context.scopes.some(s => sameScope(s as Scope, scope)))
+        context.scopes.push({ ...scope, role } as Scope);
+    }
     return { identity, resource, role };
+  }
+
+  identity(token: string): Identity {
+    return this.authenticate(token).identity;
   }
 
   // MCP discovery and self resources authenticate without broadening any scope.
   agentIdentity(token: string) {
     const { identity, credential } = this.authenticate(token);
     if (identity.kind !== "agent") throw new ForbiddenError();
+    const context = securityContext.getStore();
+    if (context) context.actor = "agent:" + identity.id;
     const agent = this.store.agent(identity.id)!;
     return {
       ...identity,
@@ -204,7 +218,14 @@ export class Authorization {
       this.authorize(session, scope);
       this.authorize(session, { ...scope, action: "delegate" });
     }
-    return this.issue(null, agentId, scopes, ttlMs, MAX_AGENT_TTL_MS);
+    return securityContext.run(
+      {
+        ...(securityContext.getStore() || requestContext()),
+        actor: "user:" + identity.id,
+        scopes
+      },
+      () => this.issue(null, agentId, scopes, ttlMs, MAX_AGENT_TTL_MS)
+    );
   }
 
   // Owners revoke their credentials; platform admins can revoke, never read by default.
@@ -223,7 +244,14 @@ export class Authorization {
         this.store.user(identity.id)?.platformRole !== "admin")
     )
       return deny();
-    this.store.revoke(digest);
+    securityContext.run(
+      {
+        ...(securityContext.getStore() || requestContext()),
+        actor: "user:" + identity.id,
+        scopes: target.scopes
+      },
+      () => this.store.revoke(digest)
+    );
     this.audit({ event: "revoked", tokenDigest: target.digest });
   }
 }

@@ -1,3 +1,9 @@
+import {
+  requestContext,
+  securityContext,
+  riskWarning,
+  safeDiagnostic
+} from "../../../packages/security/src/index.js";
 import { IncomingMessage, ServerResponse } from "node:http";
 import {
   bearerToken,
@@ -5,7 +11,7 @@ import {
 } from "../../../packages/auth/src/index.js";
 import { Requirements } from "../../../packages/database/src/requirements.js";
 import { RequirementError } from "../../../packages/requirements/src/model.js";
-export async function requirementRoute(
+async function executeRoute(
   request: IncomingMessage,
   response: ServerResponse,
   requestId: string,
@@ -77,7 +83,15 @@ export async function requirementRoute(
     else if (method === "GET" && action === "attachments" && path.length === 6)
       data = service.attachment(token, id, path[5]!);
     else throw new RequirementError("NOT_FOUND", 404);
-    response.end(JSON.stringify({ ok: true, data, request_id: requestId }));
+    response.end(
+      JSON.stringify({
+        ok: true,
+        data,
+        request_id: requestId,
+        risk_warning: riskWarning,
+        content_trust: "untrusted"
+      })
+    );
   } catch (error) {
     response.statusCode =
       error instanceof ForbiddenError
@@ -96,12 +110,20 @@ export async function requirementRoute(
               ? error.code
               : "INTERNAL_ERROR",
           message:
-            error instanceof ForbiddenError
-              ? "无权访问"
-              : "操作未完成，请检查字段、权限或重新加载最新草稿。"
+            error instanceof ForbiddenError ? "无权访问" : safeDiagnostic(error)
         },
         request_id: requestId
       })
     );
   }
+}
+
+export function requirementRoute(...args: Parameters<typeof executeRoute>) {
+  const [request, response, requestId] = args;
+  response.setHeader("X-Content-Trust", "untrusted");
+  const raw = request.headers?.["idempotency-key"];
+  const key = typeof raw === "string" && raw.length <= 200 ? raw : undefined;
+  return securityContext.run(requestContext(requestId, key), () =>
+    executeRoute(...args)
+  );
 }

@@ -1,3 +1,5 @@
+import { Scanner, FakeScanner, scanFile } from "../../security/src/index.js";
+import { audited } from "./security.js";
 import { randomBytes, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import {
@@ -24,8 +26,36 @@ export class Requirements {
   constructor(
     private db: DatabaseSync,
     private auth: Authorization,
-    private now = Date.now
-  ) {}
+    private now = Date.now,
+    private scanner: Scanner = new FakeScanner()
+  ) {
+    return audited(
+      this,
+      db,
+      auth,
+      [
+        "inspect",
+        "create",
+        "read",
+        "save",
+        "preview",
+        "publish",
+        "publicView",
+        "addAttachment",
+        "attachment"
+      ],
+      (method, args, result) => ({
+        type: ["addAttachment", "attachment"].includes(method)
+          ? "attachment"
+          : "requirement",
+        id: ["create", "addAttachment", "attachment", "publicView"].includes(
+          method
+        )
+          ? (result as { id: string }).id
+          : (args[1] as string)
+      })
+    );
+  }
   private access(token: string, project: string, write = false) {
     // Mutations return the saved private draft, so require read access before writing.
     if (write) this.access(token, project);
@@ -129,7 +159,7 @@ export class Requirements {
     if (access.identity.kind !== "user") throw new ForbiddenError();
     if (confirmed !== true || typeof confirmation !== "string")
       throw new RequirementError("CONFIRMATION_REQUIRED");
-    this.db.exec("BEGIN IMMEDIATE");
+    this.db.exec("SAVEPOINT service_operation");
     try {
       const { row } = this.row(token, id, true);
       const proof = this.db
@@ -192,9 +222,9 @@ export class Requirements {
           "DELETE FROM requirement_confirmations WHERE requirement_id = ?"
         )
         .run(id);
-      this.db.exec("COMMIT");
+      this.db.exec("RELEASE service_operation");
     } catch (error) {
-      this.db.exec("ROLLBACK");
+      this.db.exec("ROLLBACK TO service_operation; RELEASE service_operation");
       throw error;
     }
     return this.read(token, id);
@@ -241,8 +271,9 @@ export class Requirements {
       throw new RequirementError("INVALID_ATTACHMENT");
     if (!Number.isSafeInteger(value.revision))
       throw new RequirementError("REVISION_REQUIRED");
+    scanFile(value, this.scanner);
     const attachmentId = randomUUID();
-    this.db.exec("BEGIN IMMEDIATE");
+    this.db.exec("SAVEPOINT service_operation");
     try {
       const result = this.db
         .prepare(
@@ -263,10 +294,10 @@ export class Requirements {
           value.private === false ? 0 : 1
         );
       const attachments = this.read(token, id).attachments;
-      this.db.exec("COMMIT");
+      this.db.exec("RELEASE service_operation");
       return { id: attachmentId, revision: value.revision + 1, attachments };
     } catch (error) {
-      this.db.exec("ROLLBACK");
+      this.db.exec("ROLLBACK TO service_operation; RELEASE service_operation");
       throw error;
     }
   }
