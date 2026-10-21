@@ -417,6 +417,77 @@ test("search replay rejects cached tasks after Agent access is disabled", () => 
   }
 });
 
+for (const name of ["search_tasks", "get_task_context"]) {
+  test(`${name} replay applies current public fields after republication`, () => {
+    const f = fixture();
+    try {
+      const taskId = f.publish({
+        ...f.draft,
+        publicFields: [...f.draft.publicFields, "repository"]
+      });
+      const input = {
+        request_id: "visibility-replay",
+        ...(name === "search_tasks"
+          ? { project_id: "project-a" }
+          : { task_id: taskId })
+      };
+      const taskData = (result: ReturnType<typeof f.call>) => {
+        assert.equal(result.error, undefined);
+        const data =
+          name === "search_tasks"
+            ? (result.data as {
+                id: string;
+                values: Record<string, unknown>;
+              }[]).find(t => t.id === taskId)
+            : (result.data as { id: string; values: Record<string, unknown> });
+        assert.ok(data);
+        return data;
+      };
+      const first = f.call(f.sellerAgent, name, input);
+      assert.equal(
+        taskData(first).values.repository,
+        f.draft.values.repository
+      );
+      assert.deepEqual(f.call(f.sellerAgent, name, input), first);
+
+      const task = f.req.read(f.buyer, taskId);
+      f.req.save(f.buyer, taskId, task.revision, {
+        ...task.draft,
+        publicFields: task.draft.publicFields.filter(
+          field => field !== "repository"
+        )
+      });
+      f.req.publish(
+        f.buyer,
+        taskId,
+        f.req.preview(f.buyer, taskId).confirmation,
+        true
+      );
+      const fresh = f.call(f.sellerAgent, name, {
+        ...input,
+        request_id: "visibility-fresh"
+      });
+      assert.equal(Object.hasOwn(taskData(fresh).values, "repository"), false);
+      const replay = f.call(f.sellerAgent, name, input);
+      assert.equal(replay.request_id, input.request_id);
+      assert.equal(Object.hasOwn(taskData(replay).values, "repository"), false);
+      assert.deepEqual(replay.data, fresh.data);
+      assert.equal(
+        f.market.detail(f.sellerAgent, taskId).market?.allowAgents,
+        true
+      );
+
+      const restarted = new MarketplaceMcp({
+        ...f.services,
+        requests: new McpRequests(f.db)
+      });
+      assert.deepEqual(restarted.call(f.sellerAgent, name, input), replay);
+    } finally {
+      f.db.close();
+    }
+  });
+}
+
 test("drafts and clarifications are atomic, persistently idempotent and reject changed requests", () => {
   const f = fixture();
   try {

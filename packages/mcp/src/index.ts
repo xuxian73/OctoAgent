@@ -332,11 +332,17 @@ export class MarketplaceMcp {
           ) as Envelope;
         }
       );
-      // Project scope alone cannot authorize cached search results: a buyer
-      // may have disabled Agent access since the original search.
+      // Cached task payloads are not an authorization snapshot. Rebuild them
+      // through the business service so current publicFields and visibility
+      // apply even when the request journal contains an older publication.
       if (name === "search_tasks")
-        for (const task of result.data as { id: string }[])
-          this.s.market.inspectTask(token, task.id, false, "seller");
+        result.data = json(
+          (result.data as { id: string }[]).map(
+            task =>
+              this.s.market.inspectTask(token, task.id, false, "seller").detail
+          )
+        );
+      if (name === "get_task_context") result.data = json(context);
       if (result.confirmation && result.confirmation.expires_at <= this.now())
         throw new RequirementError("CONFIRMATION_EXPIRED", 409);
       if (
