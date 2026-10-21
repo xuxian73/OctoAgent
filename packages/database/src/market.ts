@@ -124,6 +124,25 @@ export class Market {
       try {
         const detail = this.detail(token, String(row.id));
         const m = detail.market!;
+        // Only published, authorized fields participate in filtering.
+        if (
+          filters.capabilities &&
+          !filters.capabilities
+            .split(",")
+            .every(tag =>
+              (m.capabilities || []).some(
+                v => v.toLowerCase() === tag.trim().toLowerCase()
+              )
+            )
+        )
+          continue;
+        if (
+          filters.permissions &&
+          !String(detail.values.permissions || "")
+            .toLowerCase()
+            .includes(filters.permissions.toLowerCase())
+        )
+          continue;
         if (m.deadline <= this.now()) continue;
         if (
           filters.stack &&

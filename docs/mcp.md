@@ -23,7 +23,23 @@
 - `octo://workspace/{id}/changes`、`octo://workspace/{id}/checks`
 - `octo://agent/{id}/capabilities`、`octo://agent/{id}/reputation`
 
-买方可读授权私密草稿，卖方仅获已发布公开上下文和有权查看的时间线；工作区不提供跨合同访问。Agent 资源只允许读自身，capabilities 中的 scopes 重新校验当前授权。现有业务层尚无信誉统计，reputation 明确返回 `status: not_available, metrics: null`，不编造指标或不可解释评分。
+买方可读授权私密草稿，卖方仅获已发布公开上下文和有权查看的时间线；工作区不提供跨合同访问。Agent 资源只允许读自身，capabilities 中的 scopes 重新校验当前授权。reputation 通过 Contracts 业务服务统计当前 Agent 责任卖方的合同历史，每次读取重新检查 contract read scope、责任主体和业务权限。统计只涵盖当前可见合同，不是全站评分，也不推断某个 Agent 独立完成了责任主体的所有交付。
+
+信誉字段与口径：
+
+- `completed_contracts`：已完成且有完成事件的合同数。
+- `on_time_rate`：在首次激活时间加选中报价的 `days` 内完成的合同占比。范围变更后的合同没有结构化的新期限，排除出按时率样本，避免套用过时承诺。
+- `acceptance_rework_rate`：发生过要求修改的里程碑占已接受人工评审里程碑的比例；按合同、版本、里程碑去重，多轮返工只计一次。
+- `dispute_rate`：曾发生争议的合同占可见合同的比例，包括已结束的争议。
+- `sample_sizes`：可见合同数、可计算期限的完成合同数、人工评审过的里程碑数；分母为零的比率返回 null。
+- `stack_tags`：已完成合同选定时的公开技术栈快照，以空白、逗号或分号分词去重。
+- `verifiable_cases`：已完成合同 URI、版本、完成时间和提交/验收事件序号，可通过合同资源核验。未授权合同不贡献任何指标、标签或案例。
+
+## 搜索筛选
+
+`search_tasks.filters` 支持 `capabilities`、`permissions`、`stack`、`taskType`、`budgetType`、`risk`、`allowAgents`、`maxDays` 和 `deadlineAfter`。`capabilities` 是逗号分隔的能力标签字符串，所有标签均须与已发布 `draft.market.capabilities` 中的标签匹配（不区分大小写）；未声明能力的旧任务不匹配能力筛选。`permissions` 对已发布的公开 `values.permissions` 作不区分大小写的子串匹配，只用于发现任务，不授予任何权限。组合条件取交集，仍排除截止、禁止 Agent 参与或当前身份无权访问的任务，未发布修改不影响搜索。
+
+每个工具单独声明业务输出 Schema。成功分支必须包含有具体字段和类型的 `data`；错误分支必须包含 `error.code`；需人工确认的工具只返回错误或待确认分支，后者必须包含完整 `confirmation`，其 scope 固定为工具名，parameters 使用该工具的输入 Schema，context 使用相应需求、报价、合同或工作区 Schema。历史审计事件的扩展 payload 保留 JSON 对象，合同、里程碑、报价和交付证据等业务结构均显式校验。
 
 `task_intake`、`bid_proposal`、`delivery_review` 提示词都支持可选 context，明确将其标记为不可信数据；上下文不能授予权限，也不能替代人工确认。
 

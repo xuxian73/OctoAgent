@@ -1,12 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { Ajv2020 } from "ajv/dist/2020.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { setup } from "./fixtures/contracts.js";
 import { Workspaces } from "../packages/database/src/workspaces.js";
 import { McpRequests } from "../packages/database/src/mcp.js";
 import { MarketplaceMcp } from "../packages/mcp/src/index.js";
-import { outputSchema } from "../packages/mcp/src/schemas.js";
+import { outputSchema, outputSchemas } from "../packages/mcp/src/schemas.js";
 import { tokenDigest } from "../packages/auth/src/index.js";
 
 function fixture() {
@@ -60,6 +61,7 @@ function fixture() {
   const call = (token: string, name: string, args: Record<string, unknown>) => {
     const result = mcp.call(token, name, args);
     outputSchema.parse(result);
+    outputSchemas[name]!.parse(result);
     return result;
   };
   return {
@@ -116,6 +118,21 @@ test("SDK client discovers every tool, JSON schemas, resource template and promp
       assert.equal(tool.inputSchema.additionalProperties, false);
       assert.equal(tool.outputSchema?.type, "object");
       assert.ok(tool.inputSchema.required?.includes("request_id"));
+      const validate = new Ajv2020({
+        strict: false,
+        validateFormats: false
+      }).compile(tool.outputSchema!);
+      const error = f.call(f.sellerAgent, tool.name, {});
+      assert.equal(validate(error), true);
+      assert.equal(validate({ ...error, error: undefined }), false);
+      assert.equal(
+        validate({
+          ...error,
+          requires_human_confirmation: true,
+          error: undefined
+        }),
+        false
+      );
     }
     assert.equal(
       (await client.listResourceTemplates()).resourceTemplates.length,
@@ -227,6 +244,32 @@ test("irreversible tools return bounded expiring human handoffs without changing
         result.requires_human_confirmation,
         true,
         JSON.stringify(result)
+      );
+      assert.equal(
+        outputSchemas[name]!.safeParse({ ...result, confirmation: undefined })
+          .success,
+        false
+      );
+      assert.equal(
+        outputSchemas[name]!.safeParse({
+          ...result,
+          confirmation: { ...result.confirmation, expires_at: "tomorrow" }
+        }).success,
+        false
+      );
+      assert.equal(
+        outputSchemas[name]!.safeParse({
+          ...result,
+          confirmation: { ...result.confirmation, context: {} }
+        }).success,
+        false
+      );
+      assert.equal(
+        outputSchemas[name]!.safeParse({
+          ...result,
+          confirmation: { ...result.confirmation, parameters: {} }
+        }).success,
+        false
       );
       assert.equal(result.confirmation?.scope, name);
       assert.equal(result.confirmation?.expires_at, 301000);
@@ -416,6 +459,354 @@ test("stale confirmation and revoked workspace permission cannot be replayed", (
     assert.deepEqual(
       f.services.workspaces.read(f.sellerAgent, f.contract.id).branches,
       {}
+    );
+  } finally {
+    f.db.close();
+  }
+});
+
+test("tool-specific output schemas require and type business results", () => {
+  const f = fixture();
+  try {
+    const cases: [string, string, Record<string, unknown>][] = [
+      [
+        f.buyerAgent,
+        "draft_task",
+        { project_id: "project-a", description: "合成需求" }
+      ],
+      [f.buyerAgent, "validate_task", { task_id: f.task }],
+      [f.buyerAgent, "list_bids", { task_id: f.task }],
+      [f.buyerAgent, "compare_bids", { task_id: f.task }],
+      [
+        f.buyerAgent,
+        "ask_bidder_question",
+        { task_id: f.task, recipient: "all", topic: "验收", text: "合成问题" }
+      ],
+      [
+        f.buyerAgent,
+        "review_milestone",
+        {
+          contract_id: f.contract.id,
+          milestone_id: f.contract.milestones[0]!.id
+        }
+      ],
+      [f.sellerAgent, "search_tasks", { project_id: "project-a" }],
+      [f.sellerAgent, "get_task_context", { task_id: f.task }],
+      [
+        f.sellerAgent,
+        "draft_bid",
+        { task_id: f.task, proposal: f.bid.proposal }
+      ],
+      [
+        f.sellerAgent,
+        "request_clarification",
+        { task_id: f.task, topic: "验收", text: "合成问题" }
+      ],
+      [f.sellerAgent, "get_contract", { contract_id: f.contract.id }],
+      [f.sellerAgent, "get_milestones", { contract_id: f.contract.id }],
+      [
+        f.sellerAgent,
+        "report_blocker",
+        { workspace_id: f.contract.id, version: 1, text: "合成阻塞" }
+      ]
+    ];
+    for (const [token, name, args] of cases) {
+      const result = f.call(token, name, {
+        request_id: `output-${name}`,
+        ...args
+      });
+      assert.equal(result.error, undefined, JSON.stringify(result));
+      const schema = outputSchemas[name]!;
+      assert.equal(
+        schema.safeParse({ ...result, data: undefined }).success,
+        false,
+        name
+      );
+      assert.equal(
+        schema.safeParse({ ...result, data: "wrong type" }).success,
+        false,
+        name
+      );
+      assert.equal(
+        schema.safeParse({
+          ...result,
+          data: Array.isArray(result.data) ? [{}] : {}
+        }).success,
+        false,
+        name
+      );
+      if (
+        typeof result.data === "object" &&
+        result.data &&
+        !Array.isArray(result.data)
+      ) {
+        for (const key of Object.keys(result.data)) {
+          const data: Record<string, unknown> = { ...result.data, [key]: null };
+          assert.equal(
+            schema.safeParse({ ...result, data }).success,
+            false,
+            `${name}.${key}`
+          );
+        }
+      }
+    }
+    const error = f.call(f.sellerAgent, "get_contract", {
+      request_id: "denied",
+      contract_id: "missing"
+    });
+    assert.equal(
+      outputSchemas.get_contract!.safeParse({ ...error, error: undefined })
+        .success,
+      false
+    );
+    assert.equal(
+      outputSchemas.get_contract!.safeParse({ ...error, error: { code: 1 } })
+        .success,
+      false
+    );
+  } finally {
+    f.db.close();
+  }
+});
+
+test("capability and permission search filters use published authorized tasks", () => {
+  const f = fixture();
+  try {
+    const publish = (
+      capabilities: string[],
+      permissions: string,
+      allowAgents = true
+    ) =>
+      f.publish({
+        ...f.draft,
+        values: { ...f.draft.values, permissions },
+        market: { ...f.draft.market!, capabilities, allowAgents }
+      });
+    const matching = publish(["TypeScript", "testing"], "repository:read");
+    publish(["Python"], "repository:read");
+    publish(["TypeScript", "testing"], "production:write");
+    publish(["TypeScript", "testing"], "repository:read", false);
+    const input = {
+      project_id: "project-a",
+      filters: {
+        capabilities: "typescript,testing",
+        permissions: "repository:read"
+      }
+    };
+    assert.deepEqual(
+      f.market
+        .search(f.sellerAgent, input.project_id, input.filters)
+        .map(t => t.id),
+      [matching]
+    );
+    const result = f.call(f.sellerAgent, "search_tasks", {
+      request_id: "filtered",
+      ...input
+    });
+    assert.equal(result.error, undefined);
+    assert.deepEqual(
+      (result.data as { id: string }[]).map(t => t.id),
+      [matching]
+    );
+    const read = f.req.read(f.buyer, matching);
+    f.req.save(f.buyer, matching, read.revision, {
+      ...read.draft,
+      market: { ...read.draft.market!, capabilities: ["Python"] }
+    });
+    assert.deepEqual(
+      f.market
+        .search(f.sellerAgent, input.project_id, input.filters)
+        .map(t => t.id),
+      [matching]
+    );
+    assert.equal(
+      f.call(f.auth.issueAgentToken(f.seller, "agent-a"), "search_tasks", {
+        request_id: "no-scope",
+        ...input
+      }).error?.code,
+      "FORBIDDEN"
+    );
+    assert.equal(
+      f.call(f.sellerAgent, "search_tasks", {
+        request_id: "other-project",
+        ...input,
+        project_id: "project-b"
+      }).error?.code,
+      "FORBIDDEN"
+    );
+    assert.equal(
+      f.call(f.sellerAgent, "search_tasks", {
+        request_id: "bad-filter",
+        ...input,
+        filters: { capabilities: [] }
+      }).error?.code,
+      "INVALID_SCHEMA"
+    );
+  } finally {
+    f.db.close();
+  }
+});
+
+test("reputation aggregates verifiable authorized seller history and rechecks isolation", () => {
+  const f = fixture();
+  try {
+    const finish = (id: string, rework: boolean) => {
+      let n = 0;
+      const command = (
+        token: string,
+        action: string,
+        extra: Record<string, unknown> = {}
+      ) => {
+        const c = f.contracts.read(token, id);
+        return f.contracts.command(token, id, {
+          action,
+          requestKey: `reputation-${++n}`,
+          version: c.version,
+          revision: c.revision,
+          confirmed: true,
+          reason: { code: "test", detail: "合成验收" },
+          ...extra
+        });
+      };
+      const c = f.contracts.read(f.buyer, id);
+      if (c.status === "draft") {
+        command(f.buyer, "transition", { to: "pending_confirmation" });
+        command(f.buyer, "confirm");
+        command(f.seller, "confirm");
+      }
+      for (const [i, m] of c.milestones.entries()) {
+        command(f.seller, "milestone", {
+          milestoneId: m.id,
+          to: "in_progress"
+        });
+        command(f.seller, "milestone", {
+          milestoneId: m.id,
+          to: "submitted",
+          evidence: "合成证据"
+        });
+        if (rework && i === 0) {
+          command(f.buyer, "milestone", {
+            milestoneId: m.id,
+            to: "changes_requested"
+          });
+          command(f.seller, "milestone", {
+            milestoneId: m.id,
+            to: "submitted",
+            evidence: "修订证据"
+          });
+        }
+        command(f.buyer, "milestone", { milestoneId: m.id, to: "accepted" });
+      }
+      f.advance(1000);
+      command(f.buyer, "transition", { to: "completed" });
+    };
+    finish(f.contract.id, true);
+    const lateTask = f.publish();
+    const lateBid = f.submit(f.seller, lateTask, {
+      ...f.bid.proposal,
+      days: 0.000001
+    });
+    const late = f.contracts.select(f.buyer, lateBid.id, true);
+    finish(late.id, false);
+    const disputedTask = f.publish();
+    const disputedBid = f.submit(f.seller, disputedTask);
+    let disputed = f.contracts.select(f.buyer, disputedBid.id, true);
+    for (const [i, step] of [
+      { action: "transition", to: "pending_confirmation" },
+      { action: "confirm" },
+      { action: "confirm" },
+      { action: "transition", to: "disputed" }
+    ].entries()) {
+      disputed = f.contracts.command(
+        i === 2 ? f.seller : f.buyer,
+        disputed.id,
+        {
+          ...step,
+          requestKey: `dispute-${i}`,
+          version: disputed.version,
+          revision: disputed.revision,
+          confirmed: true,
+          reason: { code: "scope", detail: "合成争议" }
+        }
+      );
+    }
+    const token = f.auth.issueAgentToken(
+      f.seller,
+      "agent-a",
+      [f.contract.id, late.id, disputed.id].map(resourceId => ({
+        kind: "contract",
+        resourceId,
+        action: "read"
+      }))
+    );
+    const rep = f.contracts.reputation(token, "agent-a");
+    assert.deepEqual(rep.metrics, {
+      completed_contracts: 2,
+      on_time_rate: 0.5,
+      acceptance_rework_rate: 0.25,
+      dispute_rate: 1 / 3,
+      sample_sizes: {
+        contracts: 3,
+        timed_completions: 2,
+        reviewed_milestones: 4
+      }
+    });
+    assert.deepEqual(rep.stack_tags, ["TypeScript", "testing"]);
+    assert.equal(rep.verifiable_cases.length, 2);
+    for (const c of rep.verifiable_cases) {
+      const contract = f.contracts.read(
+        token,
+        c.contract_uri.split("/").at(-1)!
+      );
+      assert.ok(c.evidence_events.length > 0);
+      assert.ok(
+        c.evidence_events.every(sequence =>
+          contract.events.some(e => e.sequence === sequence)
+        )
+      );
+    }
+    assert.deepEqual(
+      f.mcp.resource(token, "octo://agent/agent-a/reputation").data,
+      rep
+    );
+    assert.equal(
+      f.contracts.reputation(f.sellerAgent, "agent-a").metrics
+        .completed_contracts,
+      1
+    );
+    const empty = f.auth.issueAgentToken(f.seller, "agent-a");
+    assert.equal(
+      f.contracts.reputation(empty, "agent-a").metrics.completed_contracts,
+      0
+    );
+    assert.equal(
+      f.contracts.reputation(empty, "agent-a").metrics.on_time_rate,
+      null
+    );
+    for (const id of ["buyer-agent", "missing"])
+      assert.equal(
+        f.mcp.resource(token, `octo://agent/${id}/reputation`).error?.code,
+        "FORBIDDEN"
+      );
+    f.db
+      .prepare(
+        "DELETE FROM resource_grants WHERE user_id = 'seller' AND resource_kind = 'contract' AND resource_id = ? AND action = 'read'"
+      )
+      .run(late.id);
+    assert.equal(
+      f.contracts.reputation(token, "agent-a").metrics.completed_contracts,
+      1
+    );
+    f.auth.revoke(f.seller, tokenDigest(token));
+    assert.equal(
+      f.mcp.resource(token, "octo://agent/agent-a/reputation").error?.code,
+      "FORBIDDEN"
+    );
+    const expired = f.auth.issueAgentToken(f.seller, "agent-a", [], 1);
+    f.advance(2);
+    assert.equal(
+      f.mcp.resource(expired, "octo://agent/agent-a/reputation").error?.code,
+      "FORBIDDEN"
     );
   } finally {
     f.db.close();

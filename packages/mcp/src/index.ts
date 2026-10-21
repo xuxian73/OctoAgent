@@ -21,7 +21,7 @@ import { Permission } from "../../delivery/src/github.js";
 import {
   schemas,
   confirmationTools,
-  outputSchema,
+  outputSchemas,
   Envelope
 } from "./schemas.js";
 
@@ -193,7 +193,7 @@ export class MarketplaceMcp {
       const fingerprint = createHash("sha256")
         .update(canonical({ name, a }))
         .digest("hex");
-      const result = this.s.requests.run(
+      const result = this.s.requests.run<Envelope>(
         JSON.stringify([identity.id, identity.responsibleUserId]),
         requestId,
         fingerprint,
@@ -209,7 +209,7 @@ export class MarketplaceMcp {
             c.status ||
             (c.version === 0 ? "draft" : c.version ? "published" : "ready");
           if (confirmationTools.has(name)) {
-            return outputSchema.parse({
+            return outputSchemas[name]!.parse({
               request_id: requestId,
               status,
               next_step:
@@ -228,7 +228,7 @@ export class MarketplaceMcp {
                 parameters: json(a),
                 context: json(context)
               }
-            });
+            }) as Envelope;
           }
           const s = this.s;
           let data: unknown;
@@ -322,12 +322,14 @@ export class MarketplaceMcp {
             default:
               throw new RequirementError("UNKNOWN_TOOL");
           }
-          return this.envelope(
-            requestId,
-            data,
-            name === "draft_task" || name === "draft_bid" ? "draft" : status,
-            "操作完成，请查看结构化结果"
-          );
+          return outputSchemas[name]!.parse(
+            this.envelope(
+              requestId,
+              data,
+              name === "draft_task" || name === "draft_bid" ? "draft" : status,
+              "操作完成，请查看结构化结果"
+            )
+          ) as Envelope;
         }
       );
       if (result.confirmation && result.confirmation.expires_at <= this.now())
@@ -337,7 +339,7 @@ export class MarketplaceMcp {
         canonical(result.confirmation.context) !== canonical(json(context))
       )
         throw new RequirementError("STALE_CONFIRMATION", 409);
-      return outputSchema.parse(result);
+      return outputSchemas[name]!.parse(result) as Envelope;
     } catch (error) {
       return this.failure(requestId, error);
     }
@@ -398,7 +400,7 @@ export class MarketplaceMcp {
                 capabilities: identity.capabilities,
                 scopes: identity.scopes
               }
-            : { id: identity.id, status: "not_available", metrics: null };
+            : this.s.contracts.reputation(token, object!);
       } else throw new ForbiddenError();
       return this.envelope(id, data, status);
     } catch (error) {
@@ -427,7 +429,10 @@ export class MarketplaceMcp {
             ? `${name}：准备人工确认，不执行业务变更`
             : `${name}：在当前 Agent 授权内调用业务服务`,
           inputSchema: z.toJSONSchema(schema) as { type: "object" },
-          outputSchema: z.toJSONSchema(outputSchema) as { type: "object" }
+          outputSchema: {
+            ...z.toJSONSchema(outputSchemas[name]!),
+            type: "object" as const
+          }
         }))
       };
     });

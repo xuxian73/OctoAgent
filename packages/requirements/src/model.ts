@@ -29,6 +29,7 @@ export const fields = {
 } as const;
 export type Field = keyof typeof fields;
 export interface MarketSettings {
+  capabilities?: string[];
   deadline: number;
   durationDays: number;
   risk: "low" | "medium" | "high";
@@ -97,6 +98,12 @@ export function parseDraft(input: unknown): Draft {
   if (market !== undefined) {
     if (
       !market ||
+      (market.capabilities !== undefined &&
+        (!Array.isArray(market.capabilities) ||
+          market.capabilities.length > 100 ||
+          market.capabilities.some(
+            v => typeof v !== "string" || !v.trim() || v.length > 10000
+          ))) ||
       !Number.isSafeInteger(market.deadline) ||
       market.deadline <= 0 ||
       !Number.isSafeInteger(market.durationDays) ||
@@ -106,6 +113,9 @@ export function parseDraft(input: unknown): Draft {
     )
       throw new RequirementError("INVALID_MARKET_SETTINGS");
     result.market = {
+      ...(market.capabilities
+        ? { capabilities: [...new Set(market.capabilities.map(v => v.trim()))] }
+        : {}),
       deadline: market.deadline,
       durationDays: market.durationDays,
       risk: market.risk,
