@@ -1,3 +1,4 @@
+import { stageZip, deliveryId } from "./fixtures/delivery.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
@@ -285,7 +286,7 @@ test("scope changes preserve history, invalidate old confirmations and freeze de
     f.db.close();
   }
 });
-test("milestone validation, rework and Agent draft are distinct from buyer acceptance and manual settlement", () => {
+test("milestone validation, rework and Agent draft are distinct from buyer acceptance and manual settlement", async () => {
   const f = setup();
   try {
     f.db.exec(
@@ -313,15 +314,20 @@ test("milestone validation, rework and Agent draft are distinct from buyer accep
         /INVALID_TRANSITION/
       );
       f.command(f.seller, "milestone", { milestoneId, to: "in_progress" });
+      const firstZip = await stageZip(f, id, String(milestoneId));
       assert.throws(
         () =>
-          f.command(f.seller, "milestone", { milestoneId, to: "submitted" }),
-        /INVALID_TEXT/
+          f.command(f.seller, "milestone", {
+            milestoneId,
+            to: "submitted",
+            evidence: "text is insufficient"
+          }),
+        /EVIDENCE_INCOMPLETE/
       );
       f.command(f.seller, "milestone", {
         milestoneId,
         to: "submitted",
-        evidence: "合成离线报告"
+        ...firstZip
       });
       f.command(agent, "review_draft", { milestoneId, report: "建议验收" });
       assert.equal(
@@ -345,13 +351,21 @@ test("milestone validation, rework and Agent draft are distinct from buyer accep
           }),
         /INVALID_TEXT/
       );
-      f.command(f.buyer, "milestone", { milestoneId, to: "changes_requested" });
+      f.command(f.buyer, "milestone", {
+        milestoneId,
+        to: "changes_requested",
+        deliveryId: deliveryId(f.db, String(milestoneId))
+      });
       f.command(f.seller, "milestone", {
         milestoneId,
         to: "submitted",
-        evidence: "修改后报告"
+        ...(await stageZip(f, id, String(milestoneId)))
       });
-      f.command(f.buyer, "milestone", { milestoneId, to: "accepted" });
+      f.command(f.buyer, "milestone", {
+        milestoneId,
+        to: "accepted",
+        deliveryId: deliveryId(f.db, String(milestoneId))
+      });
     }
     f.command(f.buyer, "transition", { to: "completed" });
     assert.equal(f.current().settlement, "unsettled");
@@ -374,7 +388,7 @@ test("disputes freeze all subsequent commands and audit failures roll back state
     const before = f.current();
     assert.throws(
       () => f.command(f.buyer, "transition", { to: "completed" }),
-      /MILESTONES_NOT_ACCEPTED/
+      /MILESTONES_NOT_ACCEPTED|EVIDENCE_INCOMPLETE/
     );
     f.db.exec(
       "CREATE TRIGGER offline_failure BEFORE INSERT ON contract_events BEGIN SELECT RAISE(ABORT, 'offline failure'); END;"
@@ -739,11 +753,14 @@ test("all forbidden contract and milestone edges reject without changing audit h
     f.db
       .prepare("UPDATE milestones SET status = 'submitted' WHERE id = ?")
       .run(milestone.id!);
-    f.command(f.buyer, "milestone", {
-      to: "rejected",
-      milestoneId: milestone.id
-    });
-    assert.equal(f.current().milestones[0]!.status, "rejected");
+    assert.throws(
+      () =>
+        f.command(f.buyer, "milestone", {
+          to: "rejected",
+          milestoneId: milestone.id
+        }),
+      /EVIDENCE_INCOMPLETE/
+    );
   } finally {
     f.db.close();
   }

@@ -88,8 +88,8 @@ const shapes = {
   ask_bidder_question: { ...task, recipient: id, topic: text, text },
   select_bid: bid,
   review_milestone: milestone,
-  request_changes: { ...milestone, reason },
-  accept_milestone: { ...milestone, reason },
+  request_changes: { ...milestone, delivery_id: id, reason },
+  accept_milestone: { ...milestone, delivery_id: id, reason },
   open_dispute: { ...contract, reason },
   search_tasks: {
     project_id: id.optional(),
@@ -120,10 +120,22 @@ const shapes = {
   submit_milestone: {
     ...workspace,
     milestone_id: id,
-    sha: text,
+    file_id: id,
     summary: text,
-    preview_url: z.url().optional()
+    instructions: text,
+    known_issues: text
   },
+  upload_file: {
+    ...workspace,
+    milestone_id: id,
+    name: text,
+    content_base64: z
+      .string()
+      .min(1)
+      .max(13981016)
+  },
+  get_file: { contract_id: id, file_id: id },
+  download_file: { contract_id: id, file_id: id },
   report_blocker: { ...workspace, text }
 };
 export const schemas = Object.fromEntries(
@@ -142,8 +154,7 @@ export const confirmationTools = new Set([
   "open_dispute",
   "create_workspace_branch",
   "run_check",
-  "create_pull_request",
-  "submit_milestone"
+  "create_pull_request"
 ]);
 
 // Business payloads are explicit; only audit-event extension payloads are open records.
@@ -226,6 +237,20 @@ const contractStatus = z.enum([
   "cancelled",
   "disputed"
 ]);
+const zipDelivery = z.strictObject({
+  id,
+  contract_id: id,
+  version: integer,
+  milestone_id: id,
+  delivery_version: integer,
+  file_id: id,
+  responsible_user: id,
+  summary: text,
+  instructions: text,
+  known_issues: text,
+  checksum: text,
+  created_at: integer
+});
 const contractDetail = z.strictObject({
   id,
   requirement_id: id,
@@ -251,6 +276,7 @@ const contractDetail = z.strictObject({
     })
   ),
   milestones: z.array(milestoneDetail),
+  zipDeliveries: z.array(zipDelivery),
   confirmations: z.array(
     z.strictObject({
       contract_id: id,
@@ -296,6 +322,7 @@ const submission = z.strictObject({
   artifacts: z.array(artifact)
 });
 const workspaceDetail = z.strictObject({
+  zipDeliveries: z.array(zipDelivery),
   party: z.enum(["buyer", "seller"]),
   actors: z.array(z.strictObject({ id, label: text })),
   permissions: z.array(
@@ -396,6 +423,18 @@ export interface Envelope {
   error?: { code: string };
 }
 const dataSchemas: Record<string, z.ZodType> = {
+  upload_file: z.record(z.string(), z.json()),
+  get_file: z.record(z.string(), z.json()),
+  download_file: z.strictObject({
+    metadata: z.record(z.string(), z.json()),
+    content_base64: z.string().max(13981016)
+  }),
+  submit_milestone: z.strictObject({
+    status: text,
+    summary: text,
+    next_step: text,
+    result: zipDelivery
+  }),
   draft_task: requirement,
   validate_task: validation,
   list_bids: z.array(bidDetail),
@@ -404,7 +443,7 @@ const dataSchemas: Record<string, z.ZodType> = {
   review_milestone: z.strictObject({
     milestone: milestoneDetail,
     acceptance: z.string(),
-    evidence: z.array(submission),
+    evidence: z.array(zipDelivery),
     unresolved_risks: z.array(z.string()),
     recommendation: text,
     final: z.literal(false)

@@ -46,7 +46,13 @@ async function executeRoute(
         throw new RequirementError("INVALID_JSON");
     }
     let data: unknown;
-    if (method === "GET" && path.length === 4) data = service.read(token, id);
+    if (method === "GET" && path.length === 4)
+      data = service.read(
+        token,
+        id,
+        new URL(request.url!, "http://localhost").searchParams.get("git") ===
+          "1"
+      );
     else if (
       path.length === 5 &&
       action === "github" &&

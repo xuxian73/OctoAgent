@@ -24,7 +24,7 @@ test("offline process fixture verifies actual stdin, fixed options, exits, missi
     const script = (body: string) =>
       writeFileSync(executable, "#!/bin/sh\n" + body, { mode: 0o700 });
     script(
-      '[ "$1" = "--no-summary" ] || exit 2\n[ "$3" = "--scan-archive=no" ] || exit 2\n[ "$(cat)" = "actual bytes" ] || exit 2\nexit 0\n'
+      '[ "$1" = "--no-summary" ] || exit 2\n[ "$3" = "--scan-archive=yes" ] || exit 2\n[ "$(cat)" = "actual bytes" ] || exit 2\nexit 0\n'
     );
     const scanner = new ClamAVScanner(executable, fixtureTimeoutMs);
     assert.equal(await scanner.scan(bytes, checksum), "clean");

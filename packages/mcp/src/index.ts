@@ -1,3 +1,5 @@
+import { Files } from "../../database/src/files.js";
+import { ClamAVScanner } from "../../security/src/clamav.js";
 import { audited, Audit } from "../../database/src/security.js";
 import {
   riskWarning,
@@ -38,12 +40,14 @@ export interface Services {
   contracts: Contracts;
   workspaces: Workspaces;
   requests: McpRequests;
+  files?: Files;
 }
 const workspacePermissions: Record<string, Permission> = {
   create_workspace_branch: "branch",
   run_check: "check",
   create_pull_request: "pull_request",
   submit_milestone: "submit",
+  upload_file: "artifact",
   report_blocker: "discussion"
 };
 const templates = [
@@ -177,7 +181,25 @@ export class MarketplaceMcp {
       );
       if (a.version !== context.version)
         throw new RequirementError("STALE_CONTRACT", 409);
+      if (name === "submit_milestone")
+        (s.files || new Files(s.requests.db, s.auth)).download(
+          token,
+          String(a.file_id)
+        );
       return context;
+    }
+    if (name === "get_file" || name === "download_file") {
+      const file = (s.files || new Files(s.requests.db, s.auth)).metadata(
+        token,
+        String(a.file_id)
+      );
+      if (file.resource_id !== a.contract_id) throw new ForbiddenError();
+      if (name === "download_file")
+        (s.files || new Files(s.requests.db, s.auth)).download(
+          token,
+          String(a.file_id)
+        );
+      return file;
     }
     const buyer = [
       "review_milestone",
@@ -198,6 +220,13 @@ export class MarketplaceMcp {
       )
     )
       throw new ForbiddenError();
+    if (["request_changes", "accept_milestone"].includes(name))
+      s.contracts.reviewDelivery(
+        token,
+        String(a.contract_id),
+        String(a.milestone_id),
+        a.delivery_id
+      );
     return context;
   }
   call(token: string, name: string, input: unknown): Envelope {
@@ -260,6 +289,59 @@ export class MarketplaceMcp {
           const s = this.s;
           let data: unknown;
           switch (name) {
+            case "upload_file": {
+              const files =
+                s.files ||
+                new Files(s.requests.db, s.auth, new ClamAVScanner());
+              const bytes = Buffer.from(String(a.content_base64), "base64");
+              if (bytes.toString("base64") !== a.content_base64)
+                throw new RequirementError("INVALID_FILE");
+              const stored = files.upload(
+                token,
+                {
+                  kind: "artifact",
+                  resourceId: String(a.workspace_id),
+                  version: Number(a.version),
+                  revision: 0,
+                  milestoneId: String(a.milestone_id),
+                  sha: "",
+                  name: String(a.name),
+                  mime: "application/zip",
+                  requestKey: requestId
+                },
+                bytes
+              );
+              queueMicrotask(() => {
+                void files.scan(String(stored.id)).catch(() => {});
+              });
+              data = stored;
+              break;
+            }
+            case "get_file":
+              data = context;
+              break;
+            case "download_file": {
+              const result = (
+                s.files || new Files(s.requests.db, s.auth)
+              ).download(token, String(a.file_id));
+              data = {
+                metadata: result.metadata,
+                content_base64: result.bytes.toString("base64")
+              };
+              break;
+            }
+            case "submit_milestone":
+              data = s.workspaces.command(token, String(a.workspace_id), {
+                action: name,
+                version: a.version,
+                requestKey: requestId,
+                milestoneId: a.milestone_id,
+                fileId: a.file_id,
+                summary: a.summary,
+                instructions: a.instructions,
+                knownIssues: a.known_issues
+              });
+              break;
             case "draft_task":
               data = s.requirements.create(
                 token,
@@ -318,7 +400,11 @@ export class MarketplaceMcp {
               break;
             case "review_milestone": {
               const contract = context as ReturnType<Contracts["read"]>;
-              const evidence = s.workspaces.read(token, String(a.contract_id));
+              const evidence = s.workspaces.read(
+                token,
+                String(a.contract_id),
+                false
+              );
               data = {
                 milestone: contract.milestones.find(
                   m => m.id === a.milestone_id
@@ -326,10 +412,8 @@ export class MarketplaceMcp {
                 acceptance: contract.versions.find(
                   v => v.version === contract.version
                 )?.terms.acceptance,
-                evidence: evidence.submissions.filter(
-                  v =>
-                    (v as { milestoneId?: string }).milestoneId ===
-                    a.milestone_id
+                evidence: evidence.zipDeliveries.filter(
+                  v => v.milestone_id === a.milestone_id
                 ),
                 unresolved_risks: evidence.risks,
                 recommendation:
@@ -359,6 +443,7 @@ export class MarketplaceMcp {
           ) as Envelope;
         }
       );
+      if (name === "get_file") result.data = json(context);
       // Cached task payloads are not an authorization snapshot. Rebuild them
       // through the business service so current publicFields and visibility
       // apply even when the request journal contains an older publication.
@@ -421,7 +506,7 @@ export class MarketplaceMcp {
         kind === "workspace" &&
         ["changes", "checks"].includes(suffix || "")
       ) {
-        const value = this.s.workspaces.read(token, object!);
+        const value = this.s.workspaces.read(token, object!, false);
         status = value.status;
         data =
           suffix === "checks"
@@ -431,6 +516,7 @@ export class MarketplaceMcp {
                 commits: value.commits,
                 pullRequests: value.pullRequests,
                 submissions: value.submissions,
+                zipDeliveries: value.zipDeliveries,
                 risks: value.risks
               };
       } else if (

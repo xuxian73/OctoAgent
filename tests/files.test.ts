@@ -1,3 +1,4 @@
+import { zip } from "./fixtures/zip.js";
 import { FakeGitHubProvider } from "../packages/delivery/src/github.js";
 import { FakeScanner } from "../packages/security/src/index.js";
 import { test } from "node:test";
@@ -347,11 +348,11 @@ test("shared SHA submissions isolate milestone artifacts and enforce binding and
       revision: 0,
       milestoneId: String(f.current().milestones[0]!.id),
       sha,
-      name: "build.txt",
-      mime: "text/plain",
+      name: "build.zip",
+      mime: "application/zip",
       requestKey: "artifact-1"
     };
-    const file = files.upload(f.seller, input, Buffer.from("build"));
+    const file = files.upload(f.seller, input, zip("build"));
     const args = { fileId: file.id, sha, milestoneId: input.milestoneId };
     assert.throws(() => command("upload_artifact", args), /SCAN_BLOCKED/);
     await files.scan(String(file.id));
@@ -368,6 +369,9 @@ test("shared SHA submissions isolate milestone artifacts and enforce binding and
     const submission = {
       sha,
       milestoneId: input.milestoneId,
+      fileId: file.id,
+      instructions: "README",
+      knownIssues: "none",
       summary: "verified bytes"
     };
     const secondSubmission = {
@@ -377,7 +381,7 @@ test("shared SHA submissions isolate milestone artifacts and enforce binding and
     // Another milestone's file cannot satisfy this milestone's evidence.
     assert.throws(
       () => command("submit_milestone", secondSubmission),
-      /EVIDENCE_INCOMPLETE/
+      /BINDING/
     );
     const secondFile = files.upload(
       f.seller,
@@ -386,7 +390,7 @@ test("shared SHA submissions isolate milestone artifacts and enforce binding and
         milestoneId: secondSubmission.milestoneId,
         requestKey: "artifact-2"
       },
-      Buffer.from("second build")
+      zip("second build")
     );
     await files.scan(String(secondFile.id));
     command("upload_artifact", {
@@ -406,42 +410,27 @@ test("shared SHA submissions isolate milestone artifacts and enforce binding and
       () => command("submit_milestone", submission),
       /SCAN_BLOCKED/
     );
+    secondSubmission.fileId = secondFile.id;
     // An unrelated file's blocked scan must not block this submission.
     command("submit_milestone", secondSubmission);
     await files.scan(String(file.id));
     command("submit_milestone", submission);
     const view = workspace.read(f.buyer, id);
-    const imported = view.artifacts;
     assert.deepEqual(
-      view.submissions.map(value => {
-        const evidence = value as {
-          milestoneId: string;
-          artifacts: typeof imported;
-        };
-        return [evidence.milestoneId, evidence.artifacts.map(a => a.fileId)];
-      }),
-      [
-        [secondSubmission.milestoneId, [secondFile.id]],
-        [submission.milestoneId, [file.id]]
-      ]
+      view.zipDeliveries.map(d => d.file_id),
+      [secondFile.id, file.id]
     );
     assert.ok(
       f.contracts
         .read(f.buyer, id)
         .milestones.every(m => m.status === "submitted")
     );
-    assert.equal(
-      (workspace.read(f.buyer, id).submissions[0] as { simulated: boolean })
-        .simulated,
-      false
-    );
-
     assert.throws(
       () =>
         files.upload(
           f.seller,
           { ...input, resourceId: "contract-b" },
-          Buffer.from("build")
+          zip("build")
         ),
       /无权访问/
     );

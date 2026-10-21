@@ -111,16 +111,18 @@ test("offline delivery lifecycle, evidence, idempotency, failure and checksum va
       previewUrl: "https://preview.invalid/build",
       requestKey: "submit-once"
     };
-    f.command("submit_milestone", submission);
-    f.command("submit_milestone", submission);
+    assert.throws(
+      () => f.command("submit_milestone", submission),
+      /EVIDENCE_INCOMPLETE/
+    );
     const view = f.service.read(f.buyer, f.id);
-    assert.equal(view.submissions.length, 1);
+    assert.equal(view.zipDeliveries.length, 0);
     assert.equal(view.artifacts[0]!.checksum, checksum("offline build"));
     assert.deepEqual(view.risks, ["尚需人工验证预览"]);
     assert.ok(view.auditEventReferences.length);
     assert.equal(
       f.contracts.read(f.buyer, f.id).milestones[0]!.status,
-      "submitted"
+      "planned"
     );
   } finally {
     f.db.close();
@@ -306,6 +308,14 @@ test("buyer evidence page renders structured evidence and clears on contract cha
     replaceChildren() {}
   }
   const ids = [
+    "git-extension",
+    "zipDeliveries",
+    "zip-refresh",
+    "zip-file",
+    "zip-form",
+    "zip-summary",
+    "zip-instructions",
+    "zip-issues",
     "git-controls",
     "github-write",
     "github-pr",

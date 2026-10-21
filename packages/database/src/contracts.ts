@@ -1,3 +1,4 @@
+import { Deliveries } from "./deliveries.js";
 import { audited } from "./security.js";
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
@@ -295,6 +296,7 @@ export class Contracts {
           "SELECT * FROM milestones WHERE contract_id = ? ORDER BY version, rowid"
         )
         .all(id),
+      zipDeliveries: new Deliveries(this.db, this.auth, this.now).list(id),
       confirmations: this.db
         .prepare(
           "SELECT * FROM contract_confirmations WHERE contract_id = ? ORDER BY version, party"
@@ -315,6 +317,31 @@ export class Contracts {
           payload: JSON.parse(String(e.payload))
         }))
     };
+  }
+  reviewDelivery(
+    token: string,
+    id: string,
+    milestoneId: string,
+    deliveryId: unknown
+  ) {
+    const contract = this.inspect(token, id, true, "buyer");
+    if (
+      contract.status !== "active" ||
+      !contract.milestones.some(
+        m =>
+          m.id === milestoneId &&
+          m.version === contract.version &&
+          m.status === "submitted"
+      )
+    )
+      throw new RequirementError("INVALID_TRANSITION", 409);
+    const current = new Deliveries(this.db, this.auth, this.now).verify(
+      token,
+      milestoneId
+    );
+    if (current.id !== deliveryId)
+      throw new RequirementError("STALE_DELIVERY", 409);
+    return current;
   }
   // Aggregate only currently readable contracts of this Agent's responsible seller.
   // Snapshotted selection and immutable events avoid private/current task data.
@@ -524,6 +551,15 @@ export class Contracts {
           throw new RequirementError("INVALID_TRANSITION", 409);
         if (to === "completed") {
           if (party !== "buyer") throw new ForbiddenError();
+          for (const milestone of this.db
+            .prepare(
+              "SELECT id FROM milestones WHERE contract_id=? AND version=?"
+            )
+            .all(id, version))
+            new Deliveries(this.db, this.auth, this.now).verify(
+              token,
+              String(milestone.id)
+            );
           if (
             this.db
               .prepare(
@@ -562,8 +598,16 @@ export class Contracts {
           );
           if (party !== (review ? "buyer" : "seller"))
             throw new ForbiddenError();
+          const deliveries = new Deliveries(this.db, this.auth, this.now);
           const evidence =
-            to === "submitted" ? text(input.evidence) : undefined;
+            to === "submitted"
+              ? deliveries.submit(token, id, version, input)
+              : undefined;
+          const delivery = review
+            ? deliveries.verify(token, milestoneId)
+            : undefined;
+          if (delivery && input.deliveryId !== delivery.id)
+            throw new RequirementError("STALE_DELIVERY", 409);
           this.db
             .prepare("UPDATE milestones SET status = ? WHERE id = ?")
             .run(to, milestoneId);
@@ -573,6 +617,7 @@ export class Contracts {
             to,
             reason,
             evidence,
+            deliveryId: delivery?.id,
             final: review,
             humanConfirmed: true
           });

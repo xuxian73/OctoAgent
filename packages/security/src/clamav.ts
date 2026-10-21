@@ -1,3 +1,4 @@
+import { validateZip } from "./zip.js";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { isAbsolute } from "node:path";
@@ -33,13 +34,17 @@ export class ClamAVScanner implements ByteScanner {
         .digest("hex") !== checksum
     )
       return "unavailable";
-    // Archives remain unverified: disabling unpacking must not certify their contents.
     if (
       Buffer.from(bytes)
         .subarray(0, 2)
         .toString() === "PK"
-    )
-      return "rejected";
+    ) {
+      try {
+        validateZip(bytes);
+      } catch {
+        return "rejected";
+      }
+    }
     // Global admission limit: overload fails closed without an unbounded queue.
     if (activeScans >= maxConcurrentScans) return "unavailable";
     activeScans++;
@@ -51,10 +56,14 @@ export class ClamAVScanner implements ByteScanner {
             [
               "--no-summary",
               "--stdout",
-              "--scan-archive=no",
+              "--scan-archive=yes",
+              "--max-recursion=4",
+              "--max-files=1000",
+              "--max-scantime=30000",
+              "--alert-encrypted=yes",
               "--alert-exceeds-max=yes",
               "--max-filesize=10M",
-              "--max-scansize=10M",
+              "--max-scansize=30M",
               "-"
             ],
             {

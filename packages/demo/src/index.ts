@@ -51,6 +51,9 @@ export async function initializeDemo(directory: string): Promise<Report> {
       .map(row => ({
         contract_id: row.contract_id,
         provider: "offline-fake",
+        zipDeliveries: db
+          .prepare("SELECT * FROM zip_deliveries WHERE contract_id=?")
+          .all(row.contract_id!),
         ...JSON.parse(String(row.state))
       }));
     // These exports contain only synthetic evidence, never sessions or handoff credentials.

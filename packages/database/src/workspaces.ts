@@ -1,3 +1,4 @@
+import { Deliveries } from "./deliveries.js";
 import { GitHubConnections } from "./github.js";
 import { LocalGitProvider } from "../../delivery/src/local-git.js";
 import { Files } from "./files.js";
@@ -90,8 +91,6 @@ export class Workspaces {
   }
   read(token: string, id: string, includeDiffs = true) {
     const { contract, access, row, state } = this.access(token, id);
-    if (!includeDiffs && this.provider instanceof LocalGitProvider)
-      this.provider.verify(state, id);
     return {
       party: access.role,
       actors: [
@@ -125,6 +124,7 @@ export class Workspaces {
           ? this.provider.diff(state, id)
           : [],
       ...state,
+      zipDeliveries: new Deliveries(this.db, this.auth, this.now).list(id),
       auditEventReferences: contract.events
         .filter(e => String(e.kind).startsWith("workspace_"))
         .map(e => e.sequence)
@@ -250,6 +250,8 @@ export class Workspaces {
         )
         .get(id, access.identity.id, key);
       if (prior) {
+        if (action === "submit_milestone")
+          new Files(this.db, this.auth).download(token, text(input.fileId));
         if (prior.fingerprint !== fingerprint)
           throw new RequirementError("REQUEST_KEY_REUSED", 409);
         const previous = JSON.parse(String(prior.result));
@@ -406,76 +408,13 @@ export class Workspaces {
         (action === "discuss" ? state.discussions : state.risks).push(value);
         result = { text: value };
       } else if (action === "submit_milestone") {
-        const sha = text(input.sha);
+        result = new Deliveries(this.db, this.auth, this.now).submit(
+          token,
+          id,
+          contract.version,
+          input
+        );
         const milestoneId = text(input.milestoneId);
-        const boundFileIds = new Set(
-          this.db
-            .prepare(
-              "SELECT id FROM private_files WHERE kind = 'artifact' AND resource_id = ? AND version = ? AND milestone_id = ? AND sha = ?"
-            )
-            .all(id, contract.version, milestoneId, sha)
-            .map(file => String(file.id))
-        );
-        // Legacy metadata-only artifacts remain explicitly simulated evidence.
-        const artifacts = state.artifacts.filter(
-          a => a.sha === sha && (!a.fileId || boundFileIds.has(a.fileId))
-        );
-        const commit = state.commits.find(
-          c => c.sha === sha && c.version === contract.version
-        );
-        if (
-          !commit ||
-          state.branches[commit.branch] !== sha ||
-          !["test", "typecheck"].every(
-            kind =>
-              state.checks.filter(c => c.sha === sha && c.kind === kind).at(-1)
-                ?.passed
-          ) ||
-          !state.pullRequests.some(p => p.sha === sha) ||
-          artifacts.length === 0
-        )
-          throw new RequirementError("EVIDENCE_INCOMPLETE", 409);
-        for (const artifact of artifacts) {
-          if (artifact.fileId)
-            new Files(this.db, this.auth).download(token, artifact.fileId);
-        }
-
-        const milestone = contract.milestones.find(
-          m => m.id === milestoneId && m.version === contract.version
-        );
-        if (
-          !milestone ||
-          !["planned", "in_progress", "changes_requested"].includes(
-            String(milestone.status)
-          )
-        )
-          throw new RequirementError("INVALID_MILESTONE", 409);
-        let previewUrl: string | null = null;
-        if (input.previewUrl) {
-          previewUrl = text(input.previewUrl);
-          const url = new URL(previewUrl);
-          if (
-            url.protocol !== "https:" ||
-            url.username ||
-            url.password ||
-            url.search ||
-            url.hash
-          )
-            throw new RequirementError("INVALID_PREVIEW_URL");
-        }
-        result = {
-          simulated: artifacts.some(a => !a.fileId || a.simulated),
-          milestoneId,
-          sha,
-          version: contract.version,
-          summary: text(input.summary),
-          previewUrl,
-          risks: [...state.risks],
-          checks: state.checks.filter(c => c.sha === sha),
-          pullRequests: state.pullRequests.filter(p => p.sha === sha),
-          artifacts
-        };
-        state.submissions.push(result);
         this.db
           .prepare("UPDATE milestones SET status = 'submitted' WHERE id = ?")
           .run(milestoneId);

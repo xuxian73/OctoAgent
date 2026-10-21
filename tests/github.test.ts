@@ -596,6 +596,7 @@ test("browser entry confirms read-only by default, offers independent PR actions
           await new Promise<void>(r => setImmediate(r));
       } while (pending);
     };
+    Object.assign(el("git-extension"), { open: true });
     mountWorkspaces(root);
     await settle();
     assert.match(el("github-status").textContent, /本地 Git/);

@@ -4,7 +4,8 @@ import { DatabaseSync } from "node:sqlite";
 import { Authorization, ForbiddenError } from "../../auth/src/index.js";
 import { RequirementError } from "../../requirements/src/model.js";
 import { Requirements } from "./requirements.js";
-import { Workspaces } from "./workspaces.js";
+import { Contracts } from "./contracts.js";
+import { validateZip } from "../../security/src/zip.js";
 import { Audit } from "./security.js";
 
 export type ScanStatus =
@@ -98,17 +99,34 @@ export class Files {
       )
         throw new RequirementError("STALE_REQUIREMENT", 409);
     } else if (b.kind === "artifact") {
-      const service = new Workspaces(this.db, this.auth);
-      const value = write
-        ? service.inspect(token, b.resourceId, "artifact")
-        : service.read(token, b.resourceId, false);
+      const value = new Contracts(this.db, this.auth).inspect(
+        token,
+        b.resourceId,
+        write,
+        write ? "seller" : undefined
+      );
+      if (write) {
+        const identity = this.auth.identity(token);
+        if (value.status !== "active")
+          throw new RequirementError("CONTRACT_NOT_ACTIVE", 409);
+        if (
+          !this.db
+            .prepare(
+              "SELECT 1 FROM delivery_permissions WHERE contract_id=? AND actor_id=? AND permission='artifact' AND expires_at>?"
+            )
+            .get(b.resourceId, identity.id, Date.now())
+        )
+          throw new ForbiddenError();
+      }
       if (
         write &&
         (value.version !== b.version ||
           (b.sha !== "" &&
-            !value.commits.some(
-              c => c.sha === b.sha && c.version === b.version
-            )) ||
+            !this.db
+              .prepare(
+                "SELECT 1 FROM delivery_workspaces WHERE contract_id=? AND EXISTS (SELECT 1 FROM json_each(json_extract(state, '$.commits')) WHERE json_extract(value, '$.sha')=? AND json_extract(value, '$.version')=?)"
+              )
+              .get(b.resourceId, b.sha, b.version)) ||
           !this.db
             .prepare(
               "SELECT id FROM milestones WHERE id = ? AND contract_id = ? AND version = ?"
@@ -144,7 +162,12 @@ export class Files {
       )
       .all(kind, resourceId);
   }
-  upload(token: string, input: FileUpload, bytes: Uint8Array) {
+  upload(
+    token: string,
+    raw: Omit<FileUpload, "sha"> & { sha?: string },
+    bytes: Uint8Array
+  ) {
+    const input = { ...raw, sha: raw?.sha ?? "" };
     if (
       !input ||
       !Number.isSafeInteger(input.version) ||
@@ -175,19 +198,19 @@ export class Files {
       throw new RequirementError("FILE_TYPE_REJECTED", 415);
     try {
       if (ext === ".zip") {
-        if (
-          Buffer.from(bytes)
-            .subarray(0, 4)
-            .toString("hex") !== "504b0304"
-        )
-          throw new Error();
+        validateZip(bytes);
       } else {
         const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
         if (/[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(text)) throw new Error();
         if (ext === ".json") JSON.parse(text);
       }
-    } catch {
-      throw new RequirementError("FILE_TYPE_REJECTED", 415);
+    } catch (error) {
+      throw new RequirementError(
+        error instanceof Error && error.message.startsWith("ZIP_")
+          ? error.message
+          : "FILE_TYPE_REJECTED",
+        415
+      );
     }
     const checksum = digest(bytes);
     if (input.checksum !== undefined && input.checksum !== checksum)
@@ -206,7 +229,8 @@ export class Files {
         checksum
       ])
     );
-    this.db.exec("BEGIN IMMEDIATE");
+    const nested = this.db.isTransaction;
+    this.db.exec(nested ? "SAVEPOINT file_upload" : "BEGIN IMMEDIATE");
     try {
       const identity = this.access(token, input, true);
       const actor = identity.kind + ":" + identity.id;
@@ -219,7 +243,7 @@ export class Files {
         if (prior.fingerprint !== fingerprint)
           throw new RequirementError("REQUEST_KEY_REUSED", 409);
         const result = this.metadata(token, String(prior.id));
-        this.db.exec("COMMIT");
+        this.db.exec(nested ? "RELEASE file_upload" : "COMMIT");
         return result;
       }
       const count = this.db
@@ -272,10 +296,12 @@ export class Files {
           })
       );
       const result = this.metadata(token, id);
-      this.db.exec("COMMIT");
+      this.db.exec(nested ? "RELEASE file_upload" : "COMMIT");
       return result;
     } catch (error) {
-      this.db.exec("ROLLBACK");
+      this.db.exec(
+        nested ? "ROLLBACK TO file_upload; RELEASE file_upload" : "ROLLBACK"
+      );
       throw error;
     }
   }
@@ -300,13 +326,18 @@ export class Files {
         .run(id, attempt, checksum, scanner, actor, event, status, Date.now());
     };
     const transaction = <T>(action: () => T): T => {
-      this.db.exec("BEGIN IMMEDIATE");
+      const nested = this.db.isTransaction;
+      this.db.exec(nested ? "SAVEPOINT scan_operation" : "BEGIN IMMEDIATE");
       try {
         const result = action();
-        this.db.exec("COMMIT");
+        this.db.exec(nested ? "RELEASE scan_operation" : "COMMIT");
         return result;
       } catch (error) {
-        this.db.exec("ROLLBACK");
+        this.db.exec(
+          nested
+            ? "ROLLBACK TO scan_operation; RELEASE scan_operation"
+            : "ROLLBACK"
+        );
         throw error;
       }
     };

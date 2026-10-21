@@ -1,3 +1,4 @@
+import { stageZip, deliveryId } from "./fixtures/delivery.js";
 import { FakeGitHubProvider } from "../packages/delivery/src/github.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -107,6 +108,9 @@ const names = [
   "run_check",
   "create_pull_request",
   "submit_milestone",
+  "upload_file",
+  "get_file",
+  "download_file",
   "report_blocker"
 ];
 
@@ -184,7 +188,7 @@ test("SDK client discovers every tool, JSON schemas, resource template and promp
   }
 });
 
-test("irreversible tools return bounded expiring human handoffs without changing business state", () => {
+test("irreversible tools return bounded expiring human handoffs without changing business state", async () => {
   const f = fixture();
   try {
     const draft = f.req.create(f.buyer, "project-a", f.draft);
@@ -201,6 +205,18 @@ test("irreversible tools return bounded expiring human handoffs without changing
         "requirement_confirmations",
         "bid_confirmations"
       ].map(t => f.db.prepare(`SELECT * FROM ${t}`).all());
+    const zipEvidence = await stageZip(
+      f,
+      f.contract.id,
+      String(f.contract.milestones[0]!.id)
+    );
+    f.services.workspaces.command(f.seller, f.contract.id, {
+      action: "submit_milestone",
+      version: 1,
+      requestKey: "handoff-zip-submit",
+      milestoneId: f.contract.milestones[0]!.id,
+      ...zipEvidence
+    });
     const before = snapshot();
     const milestone = {
       contract_id: f.contract.id,
@@ -212,19 +228,28 @@ test("irreversible tools return bounded expiring human handoffs without changing
       [f.sellerAgent, "submit_bid", { bid_id: bid.id }],
       [f.sellerAgent, "withdraw_bid", { bid_id: f.bid.id }],
       [f.buyerAgent, "select_bid", { bid_id: f.bid.id }],
-      [f.buyerAgent, "request_changes", milestone],
-      [f.buyerAgent, "accept_milestone", milestone],
+      [
+        f.buyerAgent,
+        "request_changes",
+        {
+          ...milestone,
+          delivery_id: deliveryId(f.db, String(f.contract.milestones[0]!.id))
+        }
+      ],
+      [
+        f.buyerAgent,
+        "accept_milestone",
+        {
+          ...milestone,
+          delivery_id: deliveryId(f.db, String(f.contract.milestones[0]!.id))
+        }
+      ],
       [
         f.buyerAgent,
         "open_dispute",
         { contract_id: f.contract.id, reason: milestone.reason }
       ],
-      ...[
-        "create_workspace_branch",
-        "run_check",
-        "create_pull_request",
-        "submit_milestone"
-      ].map(
+      ...["create_workspace_branch", "run_check", "create_pull_request"].map(
         name =>
           [
             f.sellerAgent,
@@ -782,10 +807,10 @@ test("capability and permission search filters use published authorized tasks", 
   }
 });
 
-test("reputation aggregates verifiable authorized seller history and rechecks isolation", () => {
+test("reputation aggregates verifiable authorized seller history and rechecks isolation", async () => {
   const f = fixture();
   try {
-    const finish = (id: string, rework: boolean) => {
+    const finish = async (id: string, rework: boolean) => {
       let n = 0;
       const command = (
         token: string,
@@ -817,32 +842,37 @@ test("reputation aggregates verifiable authorized seller history and rechecks is
         command(f.seller, "milestone", {
           milestoneId: m.id,
           to: "submitted",
-          evidence: "合成证据"
+          ...(await stageZip(f, id, String(m.id)))
         });
         if (rework && i === 0) {
           command(f.buyer, "milestone", {
             milestoneId: m.id,
-            to: "changes_requested"
+            to: "changes_requested",
+            deliveryId: deliveryId(f.db, String(m.id))
           });
           command(f.seller, "milestone", {
             milestoneId: m.id,
             to: "submitted",
-            evidence: "修订证据"
+            ...(await stageZip(f, id, String(m.id)))
           });
         }
-        command(f.buyer, "milestone", { milestoneId: m.id, to: "accepted" });
+        command(f.buyer, "milestone", {
+          milestoneId: m.id,
+          to: "accepted",
+          deliveryId: deliveryId(f.db, String(m.id))
+        });
       }
       f.advance(1000);
       command(f.buyer, "transition", { to: "completed" });
     };
-    finish(f.contract.id, true);
+    await finish(f.contract.id, true);
     const lateTask = f.publish();
     const lateBid = f.submit(f.seller, lateTask, {
       ...f.bid.proposal,
       days: 0.000001
     });
     const late = f.contracts.select(f.buyer, lateBid.id, true);
-    finish(late.id, false);
+    await finish(late.id, false);
     const disputedTask = f.publish();
     const disputedBid = f.submit(f.seller, disputedTask);
     let disputed = f.contracts.select(f.buyer, disputedBid.id, true);

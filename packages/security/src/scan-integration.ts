@@ -1,3 +1,4 @@
+import { zip } from "./zip-sample.js";
 import { accessSync, constants } from "node:fs";
 import { createHash } from "node:crypto";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
@@ -26,6 +27,14 @@ const directory = mkdtempSync(join(tmpdir(), "octo-scan-integration-"));
 try {
   const cases = [
     ["clean", "OctoAgent clean integration sample\n", "clean"],
+    ["clean-zip", zip("OctoAgent clean integration sample\n"), "clean"],
+    [
+      "eicar-zip",
+      zip(
+        "X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
+      ),
+      "rejected"
+    ],
     [
       "eicar",
       "X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*",
@@ -34,7 +43,7 @@ try {
   ];
   let verified = true;
   for (const [name, content, expected] of cases) {
-    const path = join(directory, name!);
+    const path = join(directory, String(name));
     writeFileSync(path, content!, { mode: 0o600 });
     const bytes = readFileSync(path);
     const actual = await scanner.scan(

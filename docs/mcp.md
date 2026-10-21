@@ -6,7 +6,7 @@
 
 ## 发现和返回结构
 
-`tools/list` 提供需求第 4 节全部 24 个工具及输入/输出 JSON Schema。参数采用 snake_case；嵌套 draft/proposal 沿用业务服务字段。未知字段（包括 `confirmed`、用户身份和凭据）会被拒绝。所有工具必须提供 `request_id`；它是调用方生成的幂等键，不是授权凭据。
+`tools/list` 提供需求第 4 节工具及 ZIP 文件工具的输入/输出 JSON Schema。参数采用 snake_case；嵌套 draft/proposal 沿用业务服务字段。未知字段（包括 `confirmed`、用户身份和凭据）会被拒绝。所有工具必须提供 `request_id`；它是调用方生成的幂等键，不是授权凭据。
 
 工具同时提供 JSON 文本与 `structuredContent`，包含 `request_id`、`status`、`next_step`、`summary`、`requires_human_confirmation`，以及 `data` 或 `error.code`。业务失败设置 MCP `isError`，越权与不存在统一返回 `FORBIDDEN`。MCP 协议本身的发现、初始化和协议错误仍遵循 SDK 标准结构。
 
@@ -14,7 +14,7 @@
 
 ## 授权与资源
 
-项目工具要求精确 project read scope，写操作另需 write；合同工具要求精确 contract read/write scope。服务端再次校验组织、项目成员关系、甲乙责任主体、需求允许 Agent 参与的设置、报价归属及合同参与者。工作区沿用合同 ID，并额外检查 branch/check/pull_request/submit/discussion 的短期独立授权。
+项目工具要求精确 project read scope，写操作另需 write；合同工具要求精确 contract read/write scope。服务端再次校验组织、项目成员关系、甲乙责任主体、需求允许 Agent 参与的设置、报价归属及合同参与者。工作区沿用合同 ID，并额外检查 artifact/submit/discussion，以及可选 Git 扩展的 branch/check/pull_request 的短期独立授权。
 
 `resources/templates/list` 提供以下八个 URI 模板，具体 ID 不做全库枚举。`resources/list` 只列出当前 Agent 自身的两个资源：
 
@@ -64,7 +64,7 @@ scope，并确认签发短期凭据。市场 read 不能代替任务 read/write�
 
 ## 人工确认协议
 
-发布、提交或撤回报价、选定报价、要求修改、验收、争议、创建分支、运行检查、创建 PR 和提交里程碑，均只准备人工确认，不执行这些业务动作。返回：
+发布、提交或撤回报价、选定报价、要求修改、验收、争议、创建分支、运行检查、创建 PR，均只准备人工确认，不执行这些业务动作。返回：
 
 - `requires_human_confirmation: true`
 - `confirmation.scope`：精确工具名
@@ -83,7 +83,9 @@ scope，并确认签发短期凭据。市场 read 不能代替任务 read/write�
 | 修改、验收、争议 | `/api/contracts/{id}/commands`，最新 version/revision、结构化 reason、人工 confirmed |
 | 工作区操作       | `/api/workspaces/{id}/commands`，最新 version 和独立授权；执行者必须具备相应权限     |
 
-合同命令将 milestone_id 转成 milestoneId，修改和验收分别使用 action=milestone、to=changes_requested/accepted，争议使用 action=transition、to=disputed。工作区同样使用现有命令字段 milestoneId/previewUrl/requestKey，不能将 Agent 授权当成人类账户授权。
+ZIP 的 `upload_file`、`get_file`、`download_file` 与 `submit_milestone` 直接调用文件/交付业务服务，受独立授权、scope、字节、扫描及归属门槛约束；不要求 Git SHA 或平台检查。详见 [ZIP 交付](zip-delivery.md)。
+
+合同命令将 milestone_id 转成 milestoneId、delivery_id 转成 deliveryId，修改和验收分别使用 action=milestone、to=changes_requested/accepted，争议使用 action=transition、to=disputed。工作区同样使用现有命令字段 milestoneId/fileId/summary/instructions/knownIssues/requestKey，不能将 Agent 授权当成人类账户授权。
 
 重复相同请求返回原结果；过期确认返回 `CONFIRMATION_EXPIRED`，业务快照改变返回 `STALE_CONFIRMATION`，须以新 request_id 重新准备。人工 API 保留自己的身份、版本、状态机和确认校验，MCP 不绕过这些规则。
 
