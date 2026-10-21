@@ -1,3 +1,6 @@
+import { Requirements } from "../../../packages/database/src/requirements.js";
+import { requirementRoute } from "./requirements.js";
+import { renderRequirementEditor } from "../../web/src/requirements.js";
 import {
   Authorization,
   authorizeRequest,
@@ -27,13 +30,24 @@ export function errorResponse(
 export function handleRequest(
   request: IncomingMessage,
   response: ServerResponse,
-  authorization?: Authorization
+  authorization?: Authorization,
+  requirements?: Requirements
 ): void {
   const requestId = randomUUID();
   response.setHeader("X-Request-Id", requestId);
   response.setHeader("X-Content-Type-Options", "nosniff");
   try {
     const path = new URL(request.url || "/", "http://localhost").pathname;
+    if (path === "/api/requirements" || path.startsWith("/api/requirements/")) {
+      void requirementRoute(request, response, requestId, requirements);
+      return;
+    }
+    if (path === "/requirements" && request.method === "GET") {
+      response.setHeader("Content-Type", "text/html; charset=utf-8");
+      response.setHeader("Cache-Control", "no-store");
+      response.end(renderRequirementEditor());
+      return;
+    }
     // Read-only authorization metadata, not contract/workspace business data.
     if (path.startsWith("/api/access/")) {
       response.setHeader("Cache-Control", "no-store");
@@ -115,6 +129,14 @@ export function handleRequest(
       return;
     }
     const assets: Record<string, [string, string]> = {
+      "/requirements.js": [
+        "dist/apps/web/src/requirements.js",
+        "text/javascript; charset=utf-8"
+      ],
+      "/packages/requirements/src/model.js": [
+        "dist/packages/requirements/src/model.js",
+        "text/javascript; charset=utf-8"
+      ],
       "/tokens.css": ["apps/web/tokens.css", "text/css; charset=utf-8"],
       "/app.css": ["apps/web/app.css", "text/css; charset=utf-8"],
       "/app.js": ["dist/apps/web/src/main.js", "text/javascript; charset=utf-8"]
