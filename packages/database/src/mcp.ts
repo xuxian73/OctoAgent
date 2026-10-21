@@ -3,7 +3,7 @@ import { RequirementError } from "../../requirements/src/model.js";
 // Business-service boundary: atomically records the result with the mutation.
 // Callers must reauthorize before every run, including replay.
 export class McpRequests {
-  constructor(private db: DatabaseSync) {}
+  constructor(readonly db: DatabaseSync) {}
   run<T>(
     actor: string,
     key: string,
@@ -11,7 +11,7 @@ export class McpRequests {
     authorize: () => void,
     execute: () => T
   ): T {
-    this.db.exec("BEGIN IMMEDIATE");
+    this.db.exec("SAVEPOINT mcp_request");
     try {
       authorize();
       const prior = this.db
@@ -28,10 +28,10 @@ export class McpRequests {
         this.db
           .prepare("INSERT INTO mcp_requests VALUES (?, ?, ?, ?)")
           .run(actor, key, fingerprint, JSON.stringify(result));
-      this.db.exec("COMMIT");
+      this.db.exec("RELEASE mcp_request");
       return result;
     } catch (error) {
-      this.db.exec("ROLLBACK");
+      this.db.exec("ROLLBACK TO mcp_request; RELEASE mcp_request");
       throw error;
     }
   }

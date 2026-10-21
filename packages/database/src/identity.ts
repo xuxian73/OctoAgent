@@ -1,3 +1,5 @@
+import { Audit } from "./security.js";
+import { requestContext, securityContext } from "../../security/src/index.js";
 import { DatabaseSync } from "node:sqlite";
 import {
   Agent,
@@ -88,21 +90,53 @@ export class SqliteIdentityStore implements IdentityStore {
         }
       : undefined;
   }
+  private credentialChange(
+    value: Credential,
+    event: string,
+    change: () => void
+  ): void {
+    const current = securityContext.getStore();
+    const context = current || {
+      ...requestContext(),
+      actor: value.agentId ? "agent:" + value.agentId : "user:" + value.userId,
+      tenant: "identity",
+      scopes: value.scopes
+    };
+    securityContext.run(context, () => {
+      this.db.exec("SAVEPOINT credential_change");
+      try {
+        change();
+        new Audit(this.db).append(event, "success");
+        this.db.exec("RELEASE credential_change");
+      } catch (error) {
+        this.db.exec(
+          "ROLLBACK TO credential_change; RELEASE credential_change"
+        );
+        throw error;
+      }
+    });
+  }
   saveCredential(value: Credential): void {
-    this.db
-      .prepare("INSERT INTO credentials VALUES (?, ?, ?, ?, ?, ?)")
-      .run(
-        value.digest,
-        value.userId,
-        value.agentId,
-        value.expiresAt,
-        Number(value.revoked),
-        JSON.stringify(value.scopes)
-      );
+    this.credentialChange(value, "credential.issued", () => {
+      this.db
+        .prepare("INSERT INTO credentials VALUES (?, ?, ?, ?, ?, ?)")
+        .run(
+          value.digest,
+          value.userId,
+          value.agentId,
+          value.expiresAt,
+          Number(value.revoked),
+          JSON.stringify(value.scopes)
+        );
+    });
   }
   revoke(digest: string): void {
-    this.db
-      .prepare("UPDATE credentials SET revoked = 1 WHERE digest = ?")
-      .run(digest);
+    const value = this.credential(digest);
+    if (!value) return;
+    this.credentialChange(value, "credential.revoked", () => {
+      this.db
+        .prepare("UPDATE credentials SET revoked = 1 WHERE digest = ?")
+        .run(digest);
+    });
   }
 }

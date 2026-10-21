@@ -1,3 +1,4 @@
+import { audited } from "./security.js";
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { Authorization, ForbiddenError } from "../../auth/src/index.js";
@@ -75,15 +76,23 @@ export class Contracts {
     private db: DatabaseSync,
     private auth: Authorization,
     private now = Date.now
-  ) {}
+  ) {
+    return audited(this, db, auth, [
+      "select",
+      "inspect",
+      "read",
+      "reputation",
+      "command"
+    ]);
+  }
   private transaction<T>(fn: () => T): T {
-    this.db.exec("BEGIN IMMEDIATE");
+    this.db.exec("SAVEPOINT service_operation");
     try {
       const result = fn();
-      this.db.exec("COMMIT");
+      this.db.exec("RELEASE service_operation");
       return result;
     } catch (error) {
-      this.db.exec("ROLLBACK");
+      this.db.exec("ROLLBACK TO service_operation; RELEASE service_operation");
       throw error;
     }
   }

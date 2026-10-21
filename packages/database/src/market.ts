@@ -1,3 +1,4 @@
+import { audited } from "./security.js";
 import { randomUUID, randomBytes } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import {
@@ -12,7 +13,26 @@ export class Market {
     private db: DatabaseSync,
     private auth: Authorization,
     private now = Date.now
-  ) {}
+  ) {
+    return audited(this, db, auth, [
+      "inspectTask",
+      "inspectBid",
+      "clarify",
+      "search",
+      "detail",
+      "draft",
+      "bid",
+      "preview",
+      "submit",
+      "withdraw",
+      "supplement",
+      "listBids",
+      "compare",
+      "question",
+      "answer",
+      "timeline"
+    ]);
+  }
   private transaction<T>(fn: () => T): T {
     const nested = this.db.isTransaction;
     this.db.exec(nested ? "SAVEPOINT market_operation" : "BEGIN IMMEDIATE");

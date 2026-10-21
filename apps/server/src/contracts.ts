@@ -1,3 +1,9 @@
+import {
+  requestContext,
+  securityContext,
+  riskWarning,
+  safeDiagnostic
+} from "../../../packages/security/src/index.js";
 import { IncomingMessage, ServerResponse } from "node:http";
 import {
   bearerToken,
@@ -8,7 +14,7 @@ import {
   contractBodyLimit
 } from "../../../packages/database/src/contracts.js";
 import { RequirementError } from "../../../packages/requirements/src/model.js";
-export async function contractRoute(
+async function executeRoute(
   request: IncomingMessage,
   response: ServerResponse,
   requestId: string,
@@ -54,7 +60,15 @@ export async function contractRoute(
     else if (method === "POST" && path.length === 5 && action === "commands")
       data = service.command(token, id, body);
     else throw new RequirementError("NOT_FOUND", 404);
-    response.end(JSON.stringify({ ok: true, data, request_id: requestId }));
+    response.end(
+      JSON.stringify({
+        ok: true,
+        data,
+        request_id: requestId,
+        risk_warning: riskWarning,
+        content_trust: "untrusted"
+      })
+    );
   } catch (error) {
     response.statusCode =
       error instanceof ForbiddenError
@@ -73,12 +87,20 @@ export async function contractRoute(
               ? error.code
               : "INTERNAL_ERROR",
           message:
-            error instanceof ForbiddenError
-              ? "无权访问"
-              : "操作未完成，请检查字段、权限或重新加载最新草稿。"
+            error instanceof ForbiddenError ? "无权访问" : safeDiagnostic(error)
         },
         request_id: requestId
       })
     );
   }
+}
+
+export function contractRoute(...args: Parameters<typeof executeRoute>) {
+  const [request, response, requestId] = args;
+  response.setHeader("X-Content-Trust", "untrusted");
+  const raw = request.headers?.["idempotency-key"];
+  const key = typeof raw === "string" && raw.length <= 200 ? raw : undefined;
+  return securityContext.run(requestContext(requestId, key), () =>
+    executeRoute(...args)
+  );
 }

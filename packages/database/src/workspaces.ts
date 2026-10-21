@@ -1,3 +1,4 @@
+import { audited } from "./security.js";
 import { DatabaseSync } from "node:sqlite";
 import { Authorization, ForbiddenError } from "../../auth/src/index.js";
 import { RequirementError } from "../../requirements/src/model.js";
@@ -17,7 +18,9 @@ export class Workspaces {
     private auth: Authorization,
     private now = Date.now,
     private provider: GitHubProvider = new FakeGitHubProvider()
-  ) {}
+  ) {
+    return audited(this, db, auth, ["read", "inspect", "command"]);
+  }
   private access(token: string, id: string, write = false) {
     const contract = new Contracts(this.db, this.auth, this.now).read(
       token,
