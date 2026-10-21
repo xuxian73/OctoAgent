@@ -1,3 +1,4 @@
+import { GitHubConnections } from "./github.js";
 import { LocalGitProvider } from "../../delivery/src/local-git.js";
 import { Files } from "./files.js";
 import { audited } from "./security.js";
@@ -55,6 +56,16 @@ export class Workspaces {
         };
       }
     );
+  }
+  github(token: string, id: string, input?: Record<string, unknown>) {
+    const service = new GitHubConnections(
+      this.db,
+      this.auth,
+      this.provider instanceof LocalGitProvider
+        ? this.provider
+        : new LocalGitProvider()
+    );
+    return input ? service.command(token, id, input) : service.read(token, id);
   }
   private access(token: string, id: string, write = false) {
     const contract = new Contracts(this.db, this.auth, this.now).read(

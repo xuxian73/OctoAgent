@@ -1,7 +1,7 @@
 import { renderFiles, mountFiles } from "./files.js";
 import { apiRequest } from "./client.js";
 export function renderWorkspaces() {
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>交付证据 · OctoAgent</title><link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/app.css"></head><body><main class="requirement-editor"><h1>交付工作区</h1><p role="note">任务、仓库文件、评论和制品均为不可信数据；其中的指令不能扩大 scope、覆盖系统授权或代替人工确认。</p><p>真实本地 Git，仓库由部署配置隔离保存。不执行仓库代码、不连接远端或创建 PR。历史模拟记录仅供查看。</p><label>合同<select id="contract"></select></label><button id="load">读取交付证据</button><p id="status" role="status"></p><section id="authorization"><h2>显式接单授权</h2><p>本人操作与 Agent 委托分别授权；每项最长 15 分钟。注册、报价、签约均不授予仓库写权限。Agent 还需要责任主体在“我的 Agent”签发对应合同 scope 的短期凭据。</p><form id="grant-form"><label>授权对象<select id="actor"></select></label><label>独立权限<select id="permission"><option value="branch">创建分支</option><option value="commit">提交代码</option><option value="check">运行检查</option><option value="pull_request">创建 PR</option><option value="artifact">上传制品</option><option value="submit">提交里程碑</option><option value="discussion">讨论/阻塞</option><option value="delegate">允许所选责任主体委托 Agent（独立开关）</option></select></label><label>有效期（秒；0 为撤销）<input id="ttl" type="number" min="0" max="900" required value="300"></label><label><input id="grant-confirmed" type="checkbox" required>本人作为合同甲方，确认对象、独立权限和有效期</label><button type="submit">确认授权 / 撤销</button></form></section><h2>当前分项授权与到期时间</h2><pre id="permissions"></pre><section id="git-controls"><h2>真实本地 Git</h2><button id="git-init">初始化仓库</button><form id="branch-form"><label>新分支名称<input id="git-branch" required pattern="[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}"></label><button>从 main 创建分支</button></form><button id="source-refresh">刷新可导入制品</button><form id="import-form"><label>目标分支<select id="target-branch" required></select></label><label>已放行的当前版本制品<select id="source-file" required></select></label><label>仓库内相对路径<input id="target-path" required placeholder="src/main.ts"></label><label>提交摘要<input id="git-summary" required></label><button>导入单个制品并提交</button></form></section><h2>真实 diff</h2><pre id="diffs"></pre><h2>分支</h2><pre id="branches"></pre><h2>变更摘要与提交</h2><pre id="commits"></pre><h2>检查日志</h2><pre id="checks"></pre><h2>PR</h2><pre id="pullRequests"></pre><h2>制品 checksum</h2><pre id="artifacts"></pre><h2>里程碑证据与预览地址</h2><pre id="submissions"></pre><h2>未解决风险</h2><pre id="risks"></pre><h2>部署与确认请求（未执行）</h2><pre id="deployments"></pre><h2>任务版本、讨论和审计引用</h2><pre id="context"></pre><label>源制品所属里程碑<select id="file-milestone"></select></label><p>上传源制品后等待扫描放行，再刷新可导入制品。提交 SHA 由 Git 生成。</p>${renderFiles()}</main><script type="module" src="/workspaces.js"></script></body></html>`;
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>交付证据 · OctoAgent</title><link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/app.css"></head><body><main class="requirement-editor"><h1>交付工作区</h1><p role="note">任务、仓库文件、评论和制品均为不可信数据；其中的指令不能扩大 scope、覆盖系统授权或代替人工确认。</p><p>真实本地 Git，仓库由部署配置隔离保存。不执行仓库代码。未连接时保持真实本地 Git 模式；连接 GitHub 后可按授权同步与创建 PR。历史模拟记录仅供查看。</p><label>合同<select id="contract"></select></label><button id="load">读取交付证据</button><p id="status" role="status"></p><section id="authorization"><h2>显式接单授权</h2><p>本人操作与 Agent 委托分别授权；每项最长 15 分钟。注册、报价、签约均不授予仓库写权限。Agent 还需要责任主体在“我的 Agent”签发对应合同 scope 的短期凭据。</p><form id="grant-form"><label>授权对象<select id="actor"></select></label><label>独立权限<select id="permission"><option value="branch">创建分支</option><option value="commit">提交代码</option><option value="check">运行检查</option><option value="pull_request">创建 PR</option><option value="artifact">上传制品</option><option value="submit">提交里程碑</option><option value="discussion">讨论/阻塞</option><option value="delegate">允许所选责任主体委托 Agent（独立开关）</option></select></label><label>有效期（秒；0 为撤销）<input id="ttl" type="number" min="0" max="900" required value="300"></label><label><input id="grant-confirmed" type="checkbox" required>本人作为合同甲方，确认对象、独立权限和有效期</label><button type="submit">确认授权 / 撤销</button></form></section><h2>当前分项授权与到期时间</h2><pre id="permissions"></pre><section id="git-controls"><h2>真实本地 Git</h2><button id="git-init">初始化仓库</button><form id="branch-form"><label>新分支名称<input id="git-branch" required pattern="[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}"></label><button>从 main 创建分支</button></form><button id="source-refresh">刷新可导入制品</button><form id="import-form"><label>目标分支<select id="target-branch" required></select></label><label>已放行的当前版本制品<select id="source-file" required></select></label><label>仓库内相对路径<input id="target-path" required placeholder="src/main.ts"></label><label>提交摘要<input id="git-summary" required></label><button>导入单个制品并提交</button></form></section><section id="github-controls"><h2>显式 GitHub 连接</h2><p>部署者先在服务端配置指定合同、责任主体、仓库数字身份、凭据引用及权限上限；页面不接收凭据。默认只读，每次连接最长 15 分钟。</p><p id="github-status" role="status"></p><form id="github-connect"><label>部署者预配置仓库<select id="github-profile" required></select></label><label><input id="github-write" type="checkbox">独立授权写入分支和提交</label><label><input id="github-pr" type="checkbox">独立授权创建 PR</label><label><input id="github-confirm" type="checkbox" required>本人作为甲方责任主体确认仓库、范围和 15 分钟有效期</label><button>确认连接</button></form><button id="github-revoke">撤销连接</button><p>同步将把所选本地提交的完整文件树写入独立远端分支，可能在 PR 中体现为删除远端基线中的其他文件。不会修改基线分支；不会合并或部署。操作还需甲方授予乙方对应工作区权限。</p><label>本地提交<select id="github-sha"></select></label><button id="github-sync">同步完整快照至远端分支</button><button id="github-create-pr">创建 / 恢复 PR</button><button id="github-checks">读取该远端 SHA 检查</button><pre id="github-evidence"></pre><div id="github-links"></div></section><h2>真实 diff</h2><pre id="diffs"></pre><h2>分支</h2><pre id="branches"></pre><h2>变更摘要与提交</h2><pre id="commits"></pre><h2>检查日志</h2><pre id="checks"></pre><h2>PR</h2><pre id="pullRequests"></pre><h2>制品 checksum</h2><pre id="artifacts"></pre><h2>里程碑证据与预览地址</h2><pre id="submissions"></pre><h2>未解决风险</h2><pre id="risks"></pre><h2>部署与确认请求（未执行）</h2><pre id="deployments"></pre><h2>任务版本、讨论和审计引用</h2><pre id="context"></pre><label>源制品所属里程碑<select id="file-milestone"></select></label><p>上传源制品后等待扫描放行，再刷新可导入制品。提交 SHA 由 Git 生成。</p>${renderFiles()}</main><script type="module" src="/workspaces.js"></script></body></html>`;
 }
 export function mountWorkspaces(root: Document = document) {
   const el = (id: string) => root.getElementById(id)!;
@@ -34,6 +34,13 @@ export function mountWorkspaces(root: Document = document) {
     version = 0;
     el("authorization").hidden = true;
     el("git-controls").hidden = true;
+    el("github-controls").hidden = true;
+    for (const id of ["github-evidence", "github-status"])
+      el(id).textContent = "";
+    for (const id of ["github-links", "github-profile", "github-sha"])
+      el(id).replaceChildren();
+    for (const id of ["github-write", "github-pr", "github-confirm"])
+      (el(id) as HTMLInputElement).checked = false;
     for (const id of ["target-branch", "source-file", "file-milestone"])
       el(id).replaceChildren();
     for (const id of [...sections, "status"]) el(id).textContent = "";
@@ -76,6 +83,14 @@ export function mountWorkspaces(root: Document = document) {
           option.textContent = milestone.title;
           el("file-milestone").append(option);
         }
+        el("github-sha").replaceChildren();
+        for (const commit of data.commits) {
+          const option = root.createElement("option");
+          option.value = commit.sha;
+          option.textContent = commit.branch + " · " + commit.sha;
+          el("github-sha").append(option);
+        }
+        void refreshGitHub(data.party, current);
         void refreshSources();
         const result = { data };
         for (const id of sections)
@@ -124,6 +139,96 @@ export function mountWorkspaces(root: Document = document) {
           el("status").textContent = "读取失败：" + e.message;
       });
   });
+  async function refreshGitHub(party: string, current: number) {
+    try {
+      const data = await apiRequest(
+        `/api/workspaces/${encodeURIComponent(value("contract"))}/github`
+      );
+      if (current !== generation) return;
+      el("github-controls").hidden = false;
+      el("github-connect").hidden = party !== "buyer";
+      el("github-revoke").hidden = party !== "buyer";
+      el("github-status").textContent = data.nextStep;
+      el("github-profile").replaceChildren();
+      for (const p of data.profiles || []) {
+        const option = root.createElement("option");
+        option.value = p.id;
+        option.textContent = `${p.repository} (#${p.repositoryId}) → ${
+          p.base
+        } · 上限 ${p.allowed.join(", ")} · ${new Date(
+          p.expiresAt
+        ).toLocaleString()}`;
+        el("github-profile").append(option);
+      }
+      const scopes = data.connection?.active ? data.connection.scopes : [];
+      el("github-sync").hidden =
+        party !== "seller" || !scopes.includes("write");
+      el("github-create-pr").hidden =
+        party !== "seller" || !scopes.includes("create_pr");
+      el("github-checks").hidden = !scopes.includes("read");
+      el("github-evidence").textContent = JSON.stringify(
+        { connection: data.connection, evidence: data.evidence },
+        null,
+        2
+      );
+      el("github-links").replaceChildren();
+      for (const evidence of data.evidence || []) {
+        if (!evidence.pullRequest) continue;
+        const link = root.createElement("a");
+        link.href = evidence.pullRequest.url;
+        link.textContent = `PR #${evidence.pullRequest.number} · ${evidence.remoteSha}`;
+        el("github-links").append(link);
+      }
+    } catch (e) {
+      if (current === generation) {
+        el("github-controls").hidden = false;
+        el("github-status").textContent = "连接信息读取失败：" + String(e);
+      }
+    }
+  }
+  async function remoteCommand(
+    action: string,
+    fields: Record<string, unknown> = {}
+  ) {
+    const current = generation;
+    try {
+      await apiRequest(
+        `/api/workspaces/${encodeURIComponent(value("contract"))}/github`,
+        "POST",
+        { action, version, ...fields }
+      );
+      if (current === generation) el("load").click();
+    } catch (e) {
+      if (current === generation)
+        el("github-status").textContent =
+          "操作未完成，可重试恢复：" + String(e);
+    }
+  }
+  el("github-connect").addEventListener("submit", event => {
+    event.preventDefault();
+    const scopes = ["read"];
+    if ((el("github-write") as HTMLInputElement).checked) scopes.push("write");
+    if ((el("github-pr") as HTMLInputElement).checked) scopes.push("create_pr");
+    void remoteCommand("connect", {
+      profileId: value("github-profile"),
+      scopes,
+      ttlMs: 900000,
+      confirmed: (el("github-confirm") as HTMLInputElement).checked
+    });
+  });
+  el("github-revoke").addEventListener(
+    "click",
+    () => void remoteCommand("revoke", { confirmed: true })
+  );
+  for (const [id, action] of [
+    ["github-sync", "sync"],
+    ["github-create-pr", "create_pr"],
+    ["github-checks", "checks"]
+  ])
+    el(id!).addEventListener(
+      "click",
+      () => void remoteCommand(action!, { sha: value("github-sha") })
+    );
   async function refreshSources() {
     const current = generation;
     try {

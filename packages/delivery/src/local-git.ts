@@ -376,6 +376,34 @@ export class LocalGitProvider implements GitHubProvider {
     });
   }
 
+  snapshot(state: RepositoryState, id: string, commitSha: string) {
+    this.verify(state, id);
+    if (!state.local || !state.commits.some(c => c.sha === commitSha))
+      return fail("COMMIT_REQUIRED");
+    const dir = this.directory(id, state.local.generation);
+    const tree = sha(
+      this.run(dir, ["rev-parse", `${sha(commitSha)}^{tree}`])
+        .toString()
+        .trim()
+    );
+    const entries = this.run(dir, ["ls-tree", "-rz", commitSha])
+      .toString()
+      .split("\0")
+      .filter(Boolean);
+    if (entries.length > 200) fail("GITHUB_SNAPSHOT_TOO_LARGE");
+    let size = 0;
+    const files = entries.map(entry => {
+      const match = /^(100644) blob ([a-f0-9]{40})\t(.+)$/.exec(entry);
+      if (!match) return fail("GITHUB_UNSUPPORTED_OBJECT");
+      const path = safePath(match[3]);
+      const bytes = this.run(dir, ["cat-file", "blob", match[2]!]);
+      size += bytes.length;
+      if (size > 10 * 1024 * 1024) fail("GITHUB_SNAPSHOT_TOO_LARGE");
+      return { path, sha: match[2]!, content: bytes.toString("base64") };
+    });
+    return { tree, files };
+  }
+
   commit(): never {
     return fail("GIT_SOURCE_ARTIFACT_REQUIRED");
   }
