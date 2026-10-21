@@ -491,16 +491,26 @@ export class Market {
     evidence: unknown,
     impact: unknown
   ) {
-    const { access } = this.task(token, id, true, "seller");
-    const question = this.timeline(token, id).find(
-      e => e.sequence === questionId && e.kind === "question"
-    );
-    if (!question || !this.participant(id, access.identity.responsibleUserId))
+    const { access } = this.task(token, id, true);
+    if (!Number.isSafeInteger(questionId)) throw new ForbiddenError();
+    const buyer = access.role === "buyer";
+    const question = this.db
+      .prepare(
+        "SELECT audience FROM market_events WHERE requirement_id = ? AND sequence = ? AND kind = ?"
+      )
+      .get(id, questionId as number, buyer ? "clarification" : "question");
+    const owner = access.identity.responsibleUserId;
+    if (
+      !question ||
+      (!buyer &&
+        (!this.participant(id, owner) ||
+          (question.audience !== "all" && question.audience !== owner)))
+    )
       throw new ForbiddenError();
     return this.event(
       id,
       access.identity.id,
-      access.identity.responsibleUserId,
+      buyer ? String(question.audience) : owner,
       "answer",
       {
         questionId,

@@ -941,3 +941,69 @@ test("reputation aggregates verifiable authorized seller history and rechecks is
     f.db.close();
   }
 });
+
+test("seller MCP context closes the clarification loop without changing contract scope or grants", () => {
+  const f = fixture();
+  try {
+    f.db.exec(
+      "INSERT INTO resource_grants VALUES ('seller-two', 'project', 'project-a', 'delegate')"
+    );
+    const before = f.current();
+    const requirement = f.req.read(f.buyer, f.task);
+    const grants = f.db.prepare("SELECT * FROM resource_grants").all();
+    const result = f.call(f.sellerAgent, "request_clarification", {
+      request_id: "closed-loop-question",
+      task_id: f.task,
+      topic: "范围",
+      text: "是否增加交付并开放仓库？"
+    });
+    assert.ok(!result.error);
+    const questionId = result.data as number;
+    const answer = f.market.answer(
+      f.buyer,
+      f.task,
+      questionId,
+      "仍以合同版本为准",
+      "已发布需求",
+      "额外交付需变更确认；权限需独立授权"
+    );
+    const read = (token: string) =>
+      f.call(token, "get_task_context", {
+        request_id: "closed-loop-context",
+        task_id: f.task
+      });
+    const context = read(f.sellerAgent);
+    assert.ok(!context.error);
+    const timeline = (context.data as {
+      timeline: { sequence: number; payload: { questionId?: number } }[];
+    }).timeline;
+    assert.ok(timeline.some(e => e.sequence === questionId));
+    assert.equal(
+      timeline.find(e => e.sequence === answer)!.payload.questionId,
+      questionId
+    );
+    f.db.exec(
+      "INSERT INTO agents VALUES ('second-agent', 'seller-two', 'seller', '[]')"
+    );
+    const secondAgent = f.auth.issueAgentToken(f.second, "second-agent", [
+      { kind: "project", resourceId: "project-a", action: "read" }
+    ]);
+    const otherContext = read(secondAgent);
+    assert.ok(!otherContext.error);
+    assert.ok(!JSON.stringify(otherContext.data).includes("仍以合同版本为准"));
+    assert.deepEqual(f.current(), before);
+    assert.deepEqual(f.req.read(f.buyer, f.task), requirement);
+    assert.deepEqual(
+      f.db.prepare("SELECT * FROM resource_grants").all(),
+      grants
+    );
+    const limited = f.auth.issueAgentToken(f.seller, "agent-a", []);
+    assert.equal(read(limited).error?.code, "FORBIDDEN");
+    f.db.exec(
+      "DELETE FROM resource_grants WHERE user_id='seller' AND action='read'"
+    );
+    assert.equal(read(f.sellerAgent).error?.code, "FORBIDDEN");
+  } finally {
+    f.db.close();
+  }
+});
