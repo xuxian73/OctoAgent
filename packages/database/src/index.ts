@@ -3,8 +3,12 @@ import { mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { createHash } from "node:crypto";
 
+import { SqliteIdentityStore } from "./identity.js";
+import { IdentityStore } from "../../auth/src/model.js";
+
 // Services depend on this interface, not a driver or SQL dialect.
 export interface Database {
+  readonly identities: IdentityStore;
   migrate(): void;
   close(): void;
 }
@@ -19,6 +23,7 @@ export function openDatabase(url: string): Database {
   const connection = new DatabaseSync(path);
   connection.exec("PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
   return {
+    identities: new SqliteIdentityStore(connection),
     migrate() {
       connection.exec("BEGIN IMMEDIATE");
       try {

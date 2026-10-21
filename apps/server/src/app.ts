@@ -1,3 +1,10 @@
+import {
+  Authorization,
+  authorizeRequest,
+  ForbiddenError,
+  resourceKinds,
+  ResourceKind
+} from "../../../packages/auth/src/index.js";
 import { renderConsole, pages, ViewState } from "../../web/src/shell.js";
 import { randomUUID } from "node:crypto";
 import { IncomingMessage, ServerResponse } from "node:http";
@@ -19,13 +26,39 @@ export function errorResponse(
 
 export function handleRequest(
   request: IncomingMessage,
-  response: ServerResponse
+  response: ServerResponse,
+  authorization?: Authorization
 ): void {
   const requestId = randomUUID();
   response.setHeader("X-Request-Id", requestId);
   response.setHeader("X-Content-Type-Options", "nosniff");
   try {
     const path = new URL(request.url || "/", "http://localhost").pathname;
+    // Read-only authorization metadata, not contract/workspace business data.
+    if (path.startsWith("/api/access/")) {
+      response.setHeader("Cache-Control", "no-store");
+      const parts = path.split("/");
+      const kind = parts[3] as ResourceKind;
+      const id = parts[4];
+      if (
+        !authorization ||
+        request.method !== "GET" ||
+        parts.length !== 5 ||
+        !resourceKinds.includes(kind) ||
+        !id
+      )
+        throw new ForbiddenError();
+      const access = authorizeRequest(authorization, request, {
+        kind,
+        resourceId: id,
+        action: "read"
+      });
+      response.setHeader("Content-Type", "application/json; charset=utf-8");
+      response.end(
+        JSON.stringify({ ok: true, data: access, request_id: requestId })
+      );
+      return;
+    }
     if (request.method === "GET" && path === "/api/health") {
       const body: ApiResult<Health> = {
         ok: true,
@@ -96,7 +129,19 @@ export function handleRequest(
     response.statusCode = 404;
     response.setHeader("Content-Type", "application/json; charset=utf-8");
     response.end(JSON.stringify(errorResponse(requestId, true)));
-  } catch {
+  } catch (error) {
+    if (error instanceof ForbiddenError) {
+      response.statusCode = 403;
+      response.setHeader("Content-Type", "application/json; charset=utf-8");
+      response.end(
+        JSON.stringify({
+          ok: false,
+          error: { code: "FORBIDDEN", message: "无权访问" },
+          request_id: requestId
+        })
+      );
+      return;
+    }
     response.statusCode = 500;
     response.setHeader("Content-Type", "application/json; charset=utf-8");
     response.end(JSON.stringify(errorResponse(requestId)));

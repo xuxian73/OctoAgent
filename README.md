@@ -1,6 +1,6 @@
 # OctoAgent
 
-可运行的 TypeScript monorepo 基线与 Issue #2 品牌化应用壳；暂不包含真实认证、业务流程或外部服务。
+可运行的 TypeScript monorepo、品牌化应用壳，以及账户、组织、项目与 Agent 服务端授权基线；暂不接入第三方身份提供商或业务流程。
 
 ## 本地启动
 
@@ -32,7 +32,7 @@ npm run dev
 
 ## 数据库边界与迁移
 
-`npm run db:migrate` 显式应用迁移，开发服务器不会隐式迁移。路径相对仓库根目录，默认 `.data/octoagent.sqlite`。迁移按文件名排序，在事务中执行，记录 SHA-256，重复运行跳过已应用项；已应用文件被删除或修改会失败。当前只有基础设施表 `platform_metadata` 和迁移账本，没有业务表或权限规则。
+`npm run db:migrate` 显式应用迁移，开发服务器不会隐式迁移。路径相对仓库根目录，默认 `.data/octoagent.sqlite`。迁移按文件名排序，在事务中执行，记录 SHA-256，重复运行跳过已应用项；已应用文件被删除或修改会失败。当前包含基础设施表、迁移账本，以及 Issue #3 的身份、成员关系、授权资源引用、资源授权和凭据表。
 
 新增结构时添加 `packages/database/migrations/NNNN_description.sql` 并更新 `schema/baseline.sql`（完整目标结构）；不要修改已经应用的迁移。迁移检查在全新临时库执行迁移、对比 schema、再次执行验证幂等性，并验证篡改检测。`db:check` 需先 `npm run build`。
 
@@ -58,7 +58,7 @@ GitHub Actions 使用 `.nvmrc` 固定 Node，按 lockfile 缓存 npm，执行 `n
 
 ## 共享类型与错误约定
 
-API 使用 `ApiResult<T>` 判别联合：成功为 `{ ok: true, data, request_id }`；失败为 `{ ok: false, error: { code, message }, request_id }`。当前公共错误码为 `NOT_FOUND`（404）和 `INTERNAL_ERROR`（500）；HTTP header `X-Request-Id` 与响应 ID 一致，由服务端生成，不信任客户端传入 ID。内部异常不直接返回或记录，避免泄漏数据库地址、路径或凭据。共享 TypeScript 类型不是运行时校验，后续有输入的接口必须在服务端增加校验。
+API 使用 `ApiResult<T>` 判别联合：成功为 `{ ok: true, data, request_id }`；失败为 `{ ok: false, error: { code, message }, request_id }`。当前公共错误码为 `NOT_FOUND`（404）、`FORBIDDEN`（403）和 `INTERNAL_ERROR`（500）；HTTP header `X-Request-Id` 与响应 ID 一致，由服务端生成，不信任客户端传入 ID。内部异常不直接返回或记录，避免泄漏数据库地址、路径或凭据。共享 TypeScript 类型不是运行时校验，后续有输入的接口必须在服务端增加校验。
 
 未来业务 API 和 MCP 需要在各自 issue 中扩展业务状态、下一步、摘要与人工确认字段；本次健康检查不是业务操作，不提前实现这些规则。
 
@@ -71,3 +71,23 @@ API 使用 `ApiResult<T>` 判别联合：成功为 `{ ok: true, data, request_id
 真实身份接入时，应由服务端提供 `Session`（组织上下文与权限），不得使用演示路由、URL 参数或浏览器存储作为身份依据。渲染器会过滤未授权入口和正文，但这不是业务授权层；后续每个业务 API 仍须独立验证会话、组织和对象权限。当前没有业务数据查询或写入接口。
 
 离线测试覆盖 HTML 渲染、权限上下文、状态隔离、HTML 转义、导航路由、原生事件处理和响应式样式约束；不依赖浏览器下载或外部服务。
+
+## 身份与授权（Issue #3）
+
+`packages/auth` 是 HTTP 与后续 MCP 共用的服务端授权服务，依赖 `IdentityStore` 接口；SQLite 实现在 `packages/database/src/identity.ts`。迁移 `0002_identity.sql` 建立用户、组织、项目、成员角色、Agent、授权资源引用和凭据，不实现合同或工作区业务流程。Agent 必须绑定已存在的用户责任主体，记录 buyer/seller/orchestrator 类型和能力标签；能力标签不产生权限。责任主体不可原地变更，转移责任时必须建立新 Agent 并重新授权。
+
+授权需要同时满足：有效凭据、当前组织成员关系、当前项目成员关系（项目内资源）、角色允许、该用户对该资源和动作的明确 grant。组织成员身份不会隐式授予项目权限；项目权限不会隐式授予任何合同或工作区。平台管理员可撤销凭据，但读取资源仍需成员关系和明确 grant。
+
+| 成员角色        | read         | write        | delegate     |
+| --------------- | ------------ | ------------ | ------------ |
+| buyer（甲方）   | 需明确 grant | 需明确 grant | 需明确 grant |
+| seller（乙方）  | 需明确 grant | 需明确 grant | 需明确 grant |
+| admin（管理员） | 需明确 grant | 拒绝         | 需明确 grant |
+
+Agent 还必须满足 token scope，不能执行 delegate。scope 结构为 `{ kind, resourceId, action }`，无通配符或父资源继承；默认空 scope，不能读取私有仓库、密钥、生产环境或其他合同。服务端调用方可以通过 `authorizeRequest(auth, request, scope, roles)` 或 `auth.authorize(token, scope, roles)` 进一步限制允许的角色。scope 必须由服务端路由/工具定义，不得直接采用客户端声称的所需权限。不可逆动作的人类确认仍由后续业务层实现，write grant 本身不替代确认。
+
+`Authorization.issueUserSession` 仅供可信服务端在验证用户身份后调用，不是公开登录接口；当前无密码/OAuth 登录，也不会自动装载测试用户。`issueAgentToken` 只允许责任主体持有效用户会话签发，签发者必须同时持有目标动作及 delegate grant。Agent 凭据默认且最长 15 分钟，用户会话默认 1 小时、最长 8 小时。凭据用安全随机数生成，只在签发返回值中提供原文，数据库仅保存 SHA-256 摘要。每次请求重新读取过期、撤销、责任主体和当前权限，不缓存成功身份。`revoke(session, tokenDigest)` 持久化撤销；撤销者须是责任主体或平台管理员。可注入审计回调只接收事件类型和 token 摘要，不接收原始凭据。不可篡改审计存储属于后续审计 issue。
+
+`GET /api/access/{kind}/{id}` 是只读的授权元数据接口，用于验证接入；允许的 kind 为 organization/project/contract/workspace/repository/secret/production。要求且仅允许一个 `Authorization: Bearer …` 请求头，成功返回身份、资源引用及角色，不返回业务内容。不存在、越权、缺凭据、过期和撤销均返回相同的 403 `FORBIDDEN / 无权访问`。响应禁止缓存；客户端 request ID、用户和角色头不作为身份依据。重复读取允许，但每次重新鉴权并生成新的服务端 request ID；写操作幂等和回调重放防护留给对应业务与审计 issue。公开 preview 仍只使用合成数据。
+
+`tests/fixtures/identity.ts` 提供可复用的两个组织、甲乙双方、管理员、Agent 和明确资源 grant，不包含固定凭据。测试在内存或独立临时 SQLite 中执行，运行时生成凭据；不向开发数据库写入种子主体。
