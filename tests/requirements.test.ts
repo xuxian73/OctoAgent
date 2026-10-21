@@ -1,3 +1,4 @@
+import { FakeScanner } from "../packages/security/src/index.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
@@ -32,7 +33,7 @@ function fixture(path = ":memory:") {
   seedIdentities(db);
   let now = 1000;
   const auth = new Authorization(new SqliteIdentityStore(db), () => now);
-  const service = new Requirements(db, auth, () => now);
+  const service = new Requirements(db, auth, () => now, new FakeScanner());
   const token = auth.issueUserSession("buyer");
   return {
     db,

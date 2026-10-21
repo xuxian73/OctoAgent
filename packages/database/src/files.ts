@@ -9,15 +9,22 @@ import { Audit } from "./security.js";
 
 export type ScanStatus =
   | "quarantined"
+  | "scanning"
   | "clean"
-  | "infected"
-  | "failed"
-  | "unverifiable";
-/** Trusted server adapter only; never accept scanner identity/status from HTTP. */
+  | "rejected"
+  | "unavailable";
+/** Only explicitly injected test fixtures may simulate scanning. */
 export interface ByteScanner {
   readonly name: string;
   readonly simulated: boolean;
-  scan(bytes: Uint8Array, checksum: string): Exclude<ScanStatus, "quarantined">;
+  scan(
+    bytes: Uint8Array,
+    checksum: string
+  ):
+    | "clean"
+    | "rejected"
+    | "unavailable"
+    | Promise<"clean" | "rejected" | "unavailable">;
 }
 export interface FileBinding {
   kind: "requirement" | "artifact";
@@ -55,7 +62,7 @@ const digest = (bytes: Uint8Array | string) =>
     .update(bytes)
     .digest("hex");
 const columns =
-  "id, kind, resource_id, version, revision, milestone_id, sha, actor, responsible_user, name, mime, size, checksum, scan_status, scanner, simulated";
+  "id, kind, resource_id, version, revision, milestone_id, sha, actor, responsible_user, name, mime, size, checksum, scan_status, scanner, simulated, scan_checksum, scan_started_at, scanned_at";
 export class Files {
   readonly limits: FileLimits;
   constructor(
@@ -232,7 +239,7 @@ export class Files {
             );
       this.db
         .prepare(
-          "INSERT INTO private_files VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+          "INSERT INTO private_files (id,kind,resource_id,version,revision,milestone_id,sha,actor,responsible_user,request_key,fingerprint,name,mime,size,checksum,scan_status,scanner,simulated,bytes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
         )
         .run(
           id,
@@ -279,39 +286,116 @@ export class Files {
     this.access(token, this.binding(row));
     return row;
   }
-  /** Background scanner entry point, intentionally absent from HTTP API. */
-  scan(id: string) {
-    const row = this.db
-      .prepare("SELECT bytes, checksum FROM private_files WHERE id = ?")
-      .get(id);
-    if (!row) throw new ForbiddenError();
-    let status: ScanStatus = "unverifiable";
-    if (this.scanner) {
+  /** Atomic lease; expired/crashed attempts can be retried, old results cannot win. */
+  async scan(id: string, actor = "system:scanner", retry = false) {
+    const attempt = randomUUID();
+    const now = Date.now();
+    const scanner = this.scanner?.name || "none";
+    const audit = (event: string, status: string, checksum: string) => {
+      this.db
+        .prepare(
+          "INSERT INTO file_scan_events(file_id,attempt_id,checksum,scanner,actor,event,status,created_at) VALUES (?,?,?,?,?,?,?,?)"
+        )
+        .run(id, attempt, checksum, scanner, actor, event, status, Date.now());
+    };
+    const transaction = <T>(action: () => T): T => {
+      this.db.exec("BEGIN IMMEDIATE");
       try {
-        status = this.scanner.scan(
-          new Uint8Array(row.bytes as Uint8Array),
-          String(row.checksum)
-        );
-      } catch {
-        status = "failed";
+        const result = action();
+        this.db.exec("COMMIT");
+        return result;
+      } catch (error) {
+        this.db.exec("ROLLBACK");
+        throw error;
       }
-      if (!["clean", "infected", "failed", "unverifiable"].includes(status))
-        status = "failed";
-    }
-    this.db
-      .prepare(
-        "UPDATE private_files SET scan_status = ?, scanner = ?, simulated = ? WHERE id = ?"
-      )
-      .run(
-        status,
-        this.scanner?.name || "none",
-        this.scanner?.simulated ? 1 : 0,
-        id
+    };
+    const row = transaction(() => {
+      const previous = this.db
+        .prepare("SELECT * FROM private_files WHERE id = ?")
+        .get(id);
+      if (!previous) return undefined;
+      const claimed = this.db
+        .prepare(
+          `UPDATE private_files SET scan_status = 'scanning',
+      scan_attempt = ?, scan_started_at = ?, scanned_at = NULL, scan_checksum = NULL,
+      scanner = ?, simulated = ? WHERE id = ? AND
+      (scan_status <> 'scanning' OR scan_started_at < ?)`
+        )
+        .run(
+          attempt,
+          now,
+          this.scanner?.name || "none",
+          this.scanner?.simulated ? 1 : 0,
+          id,
+          now - 120000
+        );
+      if (!claimed.changes) {
+        audit(
+          "claim_denied",
+          String(previous.scan_status),
+          String(previous.checksum)
+        );
+        return undefined;
+      }
+      audit(
+        retry ? "retry_claimed" : "claimed",
+        "scanning",
+        String(previous.checksum)
       );
+      return previous;
+    });
+    if (!row) return;
+    const bytes = Buffer.from(row.bytes as Uint8Array);
+    let status: ScanStatus = "unavailable";
+    if (digest(bytes) === row.checksum && bytes.length === row.size) {
+      try {
+        status =
+          (await this.scanner?.scan(bytes, String(row.checksum))) ||
+          "unavailable";
+      } catch {
+        status = "unavailable";
+      }
+    }
+    if (!["clean", "rejected", "unavailable"].includes(status))
+      status = "unavailable";
+    transaction(() => {
+      const completed = this.db
+        .prepare(
+          `UPDATE private_files SET scan_status = ?, scan_checksum = ?, scanned_at = ?
+      WHERE id = ? AND checksum = ? AND bytes = ? AND scan_attempt = ? AND scan_status = 'scanning'`
+        )
+        .run(
+          status,
+          String(row.checksum),
+          Date.now(),
+          id,
+          String(row.checksum),
+          bytes,
+          attempt
+        );
+      audit(
+        completed.changes ? "completed" : "discarded",
+        status,
+        String(row.checksum)
+      );
+    });
+  }
+  retry(token: string, id: string) {
+    const row = this.metadata(token, id);
+    this.access(token, this.binding(row), true);
+    const identity = this.auth.identity(token);
+    return this.scan(id, identity.kind + ":" + identity.id, true).then(() =>
+      this.metadata(token, id)
+    );
   }
   download(token: string, id: string) {
     const metadata = this.metadata(token, id);
-    if (metadata.scan_status !== "clean")
+    if (
+      metadata.simulated !== 0 ||
+      metadata.scan_status !== "clean" ||
+      metadata.scan_checksum !== metadata.checksum ||
+      !metadata.scanned_at
+    )
       throw new RequirementError("FILE_SCAN_BLOCKED", 409);
     const bytes = Buffer.from(
       this.db.prepare("SELECT bytes FROM private_files WHERE id = ?").get(id)!

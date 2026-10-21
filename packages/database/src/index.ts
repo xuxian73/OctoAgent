@@ -1,3 +1,4 @@
+import { ClamAVScanner } from "../../security/src/clamav.js";
 import { Files, FileLimits } from "./files.js";
 import { Agents } from "./agents.js";
 import { Disputes } from "./disputes.js";
@@ -44,7 +45,8 @@ export function openDatabase(url: string): Database {
   const connection = new DatabaseSync(path);
   connection.exec("PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
   return {
-    files: (auth, limits) => new Files(connection, auth, undefined, limits),
+    files: (auth, limits) =>
+      new Files(connection, auth, new ClamAVScanner(), limits),
     agents: auth => new Agents(connection, auth),
     disputes: auth => new Disputes(connection, auth),
     onboarding: auth => new Onboarding(connection, auth),

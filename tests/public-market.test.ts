@@ -1,3 +1,4 @@
+import { FakeScanner } from "../packages/security/src/index.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
@@ -72,7 +73,7 @@ async function setup() {
       taskTypes: "新功能",
       bio: "测试资料"
     });
-  const req = new Requirements(db, auth, () => now);
+  const req = new Requirements(db, auth, () => now, new FakeScanner());
   const market = new Market(db, auth, () => now);
   const agents = new Agents(db, auth);
   const values = Object.fromEntries(
