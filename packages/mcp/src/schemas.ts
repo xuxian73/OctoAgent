@@ -92,7 +92,7 @@ const shapes = {
   accept_milestone: { ...milestone, reason },
   open_dispute: { ...contract, reason },
   search_tasks: {
-    project_id: id,
+    project_id: id.optional(),
     filters: z
       .strictObject({
         stack: text.optional(),

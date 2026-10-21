@@ -159,10 +159,7 @@ export function handleRequest(
       ) {
         response.end(
           renderApplication(
-            emptyApplication("可接任务").replace(
-              "</main>",
-              '<p>乙方资料已完成。公开任务检索将在后续开放；当前暂无可接任务。</p><a href="/onboarding#seller">编辑乙方资料</a><a href="/onboarding#buyer">发布需求：创建首个项目</a></main>'
-            ),
+            renderMarket(),
             "market",
             (context.projects as unknown) as ApplicationProject[]
           )

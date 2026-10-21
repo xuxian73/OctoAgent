@@ -46,6 +46,28 @@ export class Agents {
     if (Object.keys(input).some(key => !allowed.includes(key)))
       throw new RequirementError("INVALID_FIELDS");
   }
+  private marketScopes(session: string): Scope[] {
+    const candidates: Scope[] = [
+      { kind: "market", resourceId: "public", action: "read" }
+    ];
+    for (const row of this.db
+      .prepare("SELECT id FROM market_publications ORDER BY id")
+      .all())
+      for (const action of ["read", "write"] as const)
+        candidates.push({ kind: "task", resourceId: String(row.id), action });
+    return candidates.filter(scope => {
+      try {
+        this.auth.authorize(session, scope, ["seller"]);
+        this.auth.authorize(session, { ...scope, action: "delegate" }, [
+          "seller"
+        ]);
+        return true;
+      } catch (error) {
+        if (!(error instanceof ForbiddenError)) throw error;
+        return false;
+      }
+    });
+  }
   list(session: string) {
     const owner = this.owner(session);
     const store = new SqliteIdentityStore(this.db);
@@ -74,7 +96,7 @@ export class Agents {
     return {
       responsibleUserId: owner,
       maxTtlMs: MAX_AGENT_TTL_MS,
-      scopes,
+      scopes: [...scopes, ...this.marketScopes(session)],
       agents: this.db
         .prepare(
           "SELECT id FROM agents WHERE responsible_user_id=? ORDER BY id"
