@@ -181,6 +181,32 @@ test("owner API creates agents, confirms bounded scopes, isolates credentials an
       );
     const issued = (await call(path, "POST", input)).data.data;
     assert.equal(issued.expiresAt, now + MAX_AGENT_TTL_MS);
+    const sibling = await call("/api/agents", "POST", {
+      kind: "buyer",
+      capabilities: []
+    });
+    assert.equal(sibling.status, 200);
+    assert.equal(
+      (
+        await call(
+          "/api/agents/" + sibling.data.data.id + "/credentials/" + issued.id,
+          "DELETE"
+        )
+      ).status,
+      403
+    );
+    const listed = await call("/api/agents");
+    assert.equal(listed.status, 200);
+    assert.ok(!listed.raw.includes(issued.token));
+    const credential = listed.data.data.agents.find(
+      (value: { id: string }) => value.id === agent.id
+    ).credentials[0];
+    assert.deepEqual(credential, {
+      id: issued.id,
+      scopes: [scope],
+      expiresAt: issued.expiresAt,
+      revoked: false
+    });
     const mcp = new MarketplaceMcp({
       auth,
       requirements: f.req,
