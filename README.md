@@ -1,6 +1,6 @@
 # OctoAgent
 
-可运行的 TypeScript monorepo、品牌化应用壳，以及账户、组织、项目与 Agent 服务端授权基线；暂不接入第三方身份提供商或业务流程。
+可运行的 TypeScript monorepo、品牌化应用壳，以及账户、组织、项目与 Agent 服务端授权、需求草稿与确认发布；暂不接入第三方身份提供商。
 
 ## 本地启动
 
@@ -28,7 +28,7 @@ npm run dev
 - `packages/database`：数据库接口、SQLite adapter、schema 和有序 SQL 迁移。
 - `tests`：Node 内置测试运行器；不监听端口、不访问网络，数据库使用独立临时目录并在测试后删除。
 
-这是 npm workspaces monorepo，统一由根 `tsconfig.json` 严格检查和编译。包间当前使用显式相对导入；浏览器只导入共享类型，编译后会被擦除。后续模块可以在各 workspace 内增量扩展。
+这是 npm workspaces monorepo，统一由根 `tsconfig.json` 严格检查和编译。包间当前使用显式相对导入；浏览器导入的共享运行时模块通过显式静态资源白名单提供。后续模块可以在各 workspace 内增量扩展。
 
 ## 数据库边界与迁移
 
@@ -68,7 +68,7 @@ API 使用 `ApiResult<T>` 判别联合：成功为 `{ ok: true, data, request_id
 
 `apps/web/tokens.css` 集中定义品牌颜色、字体、间距和形状；`app.css` 使用这些 tokens，并在 760px 以下改为单栏和两列关键操作。`src/shell.ts` 提供 Logo、状态页、Agent 动作摘要与服务端 HTML 渲染，输入组织名称和动作内容均转义。`src/main.ts` 只负责重试和演示表单交互。导航使用原生链接，表单支持键盘提交，提供跳转主内容链接、焦点样式及语义标签。
 
-真实身份接入时，应由服务端提供 `Session`（组织上下文与权限），不得使用演示路由、URL 参数或浏览器存储作为身份依据。渲染器会过滤未授权入口和正文，但这不是业务授权层；后续每个业务 API 仍须独立验证会话、组织和对象权限。当前没有业务数据查询或写入接口。
+真实身份接入时，应由服务端提供 `Session`（组织上下文与权限），不得使用演示路由、URL 参数或浏览器存储作为身份依据。渲染器会过滤未授权入口和正文，但这不是业务授权层；后续每个业务 API 仍须独立验证会话、组织和对象权限。需求业务入口与接口见下方 Issue #4 说明。
 
 离线测试覆盖 HTML 渲染、权限上下文、状态隔离、HTML 转义、导航路由、原生事件处理和响应式样式约束；不依赖浏览器下载或外部服务。
 
@@ -91,3 +91,29 @@ Agent 还必须满足 token scope，不能执行 delegate。scope 结构为 `{ k
 `GET /api/access/{kind}/{id}` 是只读的授权元数据接口，用于验证接入；允许的 kind 为 organization/project/contract/workspace/repository/secret/production。要求且仅允许一个 `Authorization: Bearer …` 请求头，成功返回身份、资源引用及角色，不返回业务内容。不存在、越权、缺凭据、过期和撤销均返回相同的 403 `FORBIDDEN / 无权访问`。响应禁止缓存；客户端 request ID、用户和角色头不作为身份依据。重复读取允许，但每次重新鉴权并生成新的服务端 request ID；写操作幂等和回调重放防护留给对应业务与审计 issue。公开 preview 仍只使用合成数据。
 
 `tests/fixtures/identity.ts` 提供可复用的两个组织、甲乙双方、管理员、Agent 和明确资源 grant，不包含固定凭据。测试在内存或独立临时 SQLite 中执行，运行时生成凭据；不向开发数据库写入种子主体。
+
+## 需求草稿与发布（Issue #4）
+
+访问 `/requirements` 使用结构化表单创建、保存和按 ID 加载草稿。复用 Issue #3 的可信会话签发边界：输入已签发的甲方会话和明确授权的项目 ID；本 issue 不增加登录提供商或自动创建身份。凭据不写浏览器存储、URL、日志或测试种子。所有数据请求由服务端重新验证甲方角色、组织/项目成员关系及项目 read/write grant。Agent 可以在授权范围内编辑草稿，但不能取得发布确认或发布。
+
+表单覆盖 8 种任务类型、3 种预算方式，唯一结算币种为 CNY；按小时金额表示时薪，按里程碑填写总额及里程碑分配说明。草稿允许缺失，保存后返回缺失字段和风险提示；发布要求全部字段完整、金额有效。没有仓库、权限等情况请明确填写“无”。里程碑分配和验收条款目前为文本，由甲方在摘要中审核。
+
+所有自由文本默认私密，逐字段勾选才允许进入公开快照。发布前返回范围、预算、交付物、验收标准及附件摘要；确认凭证绑定人类身份、草稿修订号和 10 分钟有效期。修改文字、公开标记或添加附件都会使旧确认失效。第一次确认发布生成版本 1；后续先保存待发布编辑，再重新确认生成递增版本。编辑期间公开视图继续返回上次确认的快照。修订号 CAS 拒绝并发覆盖，确认发布不可重放。
+
+`0003_requirements.sql` 保存草稿、公开快照、变更字段名和发布者，以及报价参与者与通知事件。变更记录不存文本原文。每次后续发布与版本记录、每位参与报价者的 `requirement_changed` 事件在同一事务提交；通知失败则整体回滚。`requirement_participants` 仅供后续报价服务在可信事务内登记，没有公开订阅/冒充报价接口。本 issue 不发送邮件、不实现报价业务。
+
+附件仅登记元数据，不接收、存储或提供文件内容下载。服务端限制为 1 字节至 10 MiB，允许 PDF/TXT/PNG/JPG 的 MIME 与扩展名组合，拒绝路径名称和不支持类型。默认私密；私密附件元数据仅项目授权甲方可读。明确公开的元数据也要等重新确认发布后才进入公开快照。没有真实文件上传，因此不声称完成内容嗅探或病毒扫描。
+
+API（JSON 请求，除 public 外均要求唯一 Bearer 请求头）：
+
+| 路径                                                | 方法      | 用途                                                      |
+| --------------------------------------------------- | --------- | --------------------------------------------------------- |
+| `/api/requirements`                                 | POST      | `{ projectId, draft: { values, publicFields } }` 创建草稿 |
+| `/api/requirements/{id}`                            | GET / PUT | 读取；用 `{ revision, draft }` 保存                       |
+| `/api/requirements/{id}/preview`                    | POST      | 校验并取得结构化摘要和确认凭证                            |
+| `/api/requirements/{id}/publish`                    | POST      | `{ confirmation, confirmed: true }` 确认发布              |
+| `/api/requirements/{id}/public`                     | GET       | 只读已发布且明确允许公开的字段与附件元数据                |
+| `/api/requirements/{id}/attachments`                | POST      | `{ name, mime, size, private? }` 登记元数据               |
+| `/api/requirements/{id}/attachments/{attachmentId}` | GET       | 授权读取元数据                                            |
+
+`tests/requirements.test.ts` 离线覆盖字段/枚举、确认与重放、过期与身份绑定、两连接并发、通知事务回滚、重开数据库、附件边界、租户权限与 HTTP 输入校验。服务端不记录请求体、附件名称或内部异常原文。

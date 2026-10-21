@@ -83,3 +83,13 @@ test("styles are explicitly served and business routes remain unavailable", () =
   assert.equal(request("/preview/requirements", "POST").status, 404);
   assert.equal(request("/api/contracts").status, 404);
 });
+
+test("requirement editor and its browser dependency are explicitly served", () => {
+  assert.match(request("/requirements").body, /id="requirement-form"/);
+  assert.match(request("/requirements.js").body, /mountRequirementEditor/);
+  assert.match(
+    request("/packages/requirements/src/model.js").body,
+    /taskTypes/
+  );
+  assert.equal(request("/api/requirements-other").status, 404);
+});

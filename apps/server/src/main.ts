@@ -10,7 +10,12 @@ const database = openDatabase(
 );
 const authorization = new Authorization(database.identities);
 const server = createServer((request, response) =>
-  handleRequest(request, response, authorization)
+  handleRequest(
+    request,
+    response,
+    authorization,
+    database.requirements(authorization)
+  )
 );
 server.on("close", () => database.close());
 server.listen(port, process.env.HOST || "127.0.0.1", () => {

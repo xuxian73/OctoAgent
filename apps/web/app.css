@@ -242,3 +242,39 @@ footer {
     padding: 1.25rem;
   }
 }
+.requirement-editor {
+  max-width: 64rem;
+}
+.requirement-editor fieldset {
+  margin: 0 0 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  min-width: 0;
+}
+.requirement-editor textarea,
+.requirement-editor select {
+  width: 100%;
+  padding: 0.75rem;
+  font: inherit;
+  border: 1px solid var(--muted);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+}
+.requirement-editor input[type="checkbox"] {
+  width: auto;
+  margin-right: 0.5rem;
+}
+.requirement-editor textarea:focus-visible,
+.requirement-editor select:focus-visible {
+  outline: 3px solid var(--coral);
+  outline-offset: 4px;
+}
+.requirement-editor pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+}
+.requirement-editor button {
+  margin: 0.5rem 0;
+}
