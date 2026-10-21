@@ -216,6 +216,14 @@ test("owner API creates agents, confirms bounded scopes, isolates credentials an
       requests: new McpRequests(f.db)
     });
     assert.doesNotThrow(() => auth.agentIdentity(issued.token));
+    const search = {
+      request_id: "agent-credential-search",
+      project_id: "project-a"
+    };
+    assert.equal(
+      mcp.call(issued.token, "search_tasks", search).error,
+      undefined
+    );
     assert.equal(
       (await call("/api/agents", "GET", undefined, issued.token)).status,
       403
@@ -232,16 +240,27 @@ test("owner API creates agents, confirms bounded scopes, isolates credentials an
     assert.ok(!service.list(other).agents.some(a => a.id === agent.id));
     assert.equal((await call(path + "/" + issued.id, "DELETE")).status, 200);
     assert.throws(() => auth.agentIdentity(issued.token));
-    assert.ok(mcp.call(issued.token, "search_tasks", {}).error);
+    // Replaying a successful request must recheck the revoked credential.
+    assert.equal(
+      mcp.call(issued.token, "search_tasks", search).error?.code,
+      "FORBIDDEN"
+    );
     assert.equal(
       service.list(owner).agents.find(a => a.id === agent.id)!.credentials[0]!
         .revoked,
       true
     );
     const expiring = service.issue(owner, agent.id, { ...input, ttlMs: 100 });
+    assert.equal(
+      mcp.call(expiring.token, "search_tasks", search).error,
+      undefined
+    );
     now += 100;
     assert.throws(() => auth.agentIdentity(expiring.token));
-    assert.ok(mcp.call(expiring.token, "search_tasks", {}).error);
+    assert.equal(
+      mcp.call(expiring.token, "search_tasks", search).error?.code,
+      "FORBIDDEN"
+    );
     for (const action of ["delegate", "read"]) {
       f.db.exec("SAVEPOINT grants");
       f.db
