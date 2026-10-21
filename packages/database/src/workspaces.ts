@@ -1,3 +1,4 @@
+import { Checks } from "./checks.js";
 import { LocalGitProvider } from "../../delivery/src/local-git.js";
 import { Files } from "./files.js";
 import { audited } from "./security.js";
@@ -81,6 +82,9 @@ export class Workspaces {
     const { contract, access, row, state } = this.access(token, id);
     if (!includeDiffs && this.provider instanceof LocalGitProvider)
       this.provider.verify(state, id);
+    const checkResults = state.local
+      ? new Checks(this.db, this.auth).list(id)
+      : [];
     return {
       party: access.role,
       actors: [
@@ -114,6 +118,29 @@ export class Workspaces {
           ? this.provider.diff(state, id)
           : [],
       ...state,
+      checks: state.local
+        ? checkResults.map(c => ({
+            ...c,
+            passed:
+              checkResults
+                .filter(
+                  r =>
+                    r.sha === c.sha &&
+                    r.kind === c.kind &&
+                    r.version === c.version
+                )
+                .at(-1)?.id === c.id &&
+              c.passed &&
+              c.status === "succeeded" &&
+              c.version === contract.version &&
+              contract.status === "active" &&
+              state.commits.some(
+                commit =>
+                  commit.sha === c.sha &&
+                  state.branches[commit.branch] === c.sha
+              )
+          }))
+        : state.checks,
       auditEventReferences: contract.events
         .filter(e => String(e.kind).startsWith("workspace_"))
         .map(e => e.sequence)
@@ -153,6 +180,7 @@ export class Workspaces {
         create_workspace_branch: "branch",
         commit: "commit",
         run_check: "check",
+        cancel_check: "check",
         create_pull_request: "pull_request",
         upload_artifact: "artifact",
         submit_milestone: "submit",
@@ -179,6 +207,19 @@ export class Workspaces {
           this.provider.authorize(required[action]!, grants);
         }
       }
+      if (
+        ["run_check", "cancel_check"].includes(action) &&
+        Object.keys(input).some(
+          k =>
+            ![
+              "action",
+              "version",
+              "requestKey",
+              ...(action === "run_check" ? ["sha", "kind"] : ["checkId"])
+            ].includes(k)
+        )
+      )
+        throw new RequirementError("INVALID_CHECK_INPUT");
       const gitWrite = [
         "initialize_repository",
         "create_workspace_branch",
@@ -346,6 +387,25 @@ export class Workspaces {
           text(input.summary),
           contract.version
         );
+      else if (action === "cancel_check")
+        result = new Checks(this.db, this.auth).cancel(id, text(input.checkId));
+      else if (
+        action === "run_check" &&
+        this.provider instanceof LocalGitProvider
+      )
+        result = new Checks(
+          this.db,
+          this.auth,
+          this.provider,
+          this.now
+        ).enqueue(
+          token,
+          id,
+          state,
+          contract.version,
+          text(input.sha),
+          text(input.kind)
+        );
       else if (action === "run_check")
         result = this.provider.runCheck(
           state,
@@ -395,6 +455,10 @@ export class Workspaces {
         (action === "discuss" ? state.discussions : state.risks).push(value);
         result = { text: value };
       } else if (action === "submit_milestone") {
+        if (state.local)
+          state.checks = new Checks(this.db, this.auth)
+            .list(id)
+            .filter(c => c.version === contract.version);
         const sha = text(input.sha);
         const milestoneId = text(input.milestoneId);
         const boundFileIds = new Set(
@@ -453,7 +517,8 @@ export class Workspaces {
             throw new RequirementError("INVALID_PREVIEW_URL");
         }
         result = {
-          simulated: artifacts.some(a => !a.fileId || a.simulated),
+          simulated:
+            !state.local || artifacts.some(a => !a.fileId || a.simulated),
           milestoneId,
           sha,
           version: contract.version,

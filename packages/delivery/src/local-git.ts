@@ -13,6 +13,7 @@ import {
   writeFileSync
 } from "node:fs";
 import { isAbsolute, join, resolve, parse } from "node:path";
+import { tmpdir } from "node:os";
 import { ForbiddenError } from "../../auth/src/index.js";
 import { RequirementError } from "../../requirements/src/model.js";
 import {
@@ -30,6 +31,29 @@ const fail = (code: string): never => {
 };
 const sha = (value: string) =>
   /^[a-f0-9]{40}$/.test(value) ? value : fail("GIT_REPOSITORY_CORRUPT");
+let resolvedGit: string | undefined;
+function defaultGitExecutable() {
+  if (process.platform !== "darwin") return "/usr/bin/git";
+  if (resolvedGit) return resolvedGit;
+  // /usr/bin/git on macOS is a developer-tools launcher, not the Git binary.
+  // Resolve once so each plumbing operation does not launch tool discovery.
+  const result = spawnSync("/usr/bin/xcrun", ["--find", "git"], {
+    timeout: 30000,
+    maxBuffer: 4096,
+    encoding: "utf8",
+    env: { PATH: "/usr/bin:/bin", TMPDIR: tmpdir() }
+  });
+  const executable = result.stdout?.trim();
+  if (
+    result.error ||
+    result.status !== 0 ||
+    !executable ||
+    !isAbsolute(executable)
+  )
+    return fail("GIT_UNAVAILABLE");
+  resolvedGit = executable;
+  return executable;
+}
 export function branchName(value: string) {
   if (
     !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(value) ||
@@ -42,7 +66,7 @@ export function branchName(value: string) {
 export class LocalGitProvider implements GitHubProvider {
   constructor(
     private root = process.env.GIT_REPOSITORY_ROOT,
-    private executable = "/usr/bin/git"
+    private executable = defaultGitExecutable()
   ) {}
   authorize(permission: Permission, granted: readonly string[]) {
     if (!granted.includes(permission)) throw new ForbiddenError();
@@ -104,6 +128,9 @@ export class LocalGitProvider implements GitHubProvider {
         maxBuffer: preview ? diffPreviewBytes : 24 * 1024 * 1024,
         env: {
           PATH: "/usr/bin:/bin",
+          // Apple's Git launcher otherwise queries confstr for a temp directory,
+          // which can stall or fail under a restricted sandbox.
+          TMPDIR: tmpdir(),
           HOME: dir,
           XDG_CONFIG_HOME: dir,
           GIT_CONFIG_NOSYSTEM: "1",
@@ -373,6 +400,29 @@ export class LocalGitProvider implements GitHubProvider {
             ? "\n[差异预览已截断：最多显示 256 KiB；提交与来源字节仍完整核验]\n"
             : "")
       };
+    });
+  }
+
+  /** Read blobs directly; never checkout, honor attributes, or execute filters. */
+  snapshot(state: RepositoryState, id: string, commitSha: string) {
+    this.verify(state, id);
+    if (!state.local || !state.commits.some(c => c.sha === commitSha))
+      return fail("COMMIT_REQUIRED");
+    const dir = this.directory(id, state.local.generation);
+    const entries = this.run(dir, ["ls-tree", "-rz", sha(commitSha)])
+      .toString()
+      .split("\0")
+      .filter(Boolean);
+    let total = 0;
+    if (entries.length > 1000) fail("SNAPSHOT_TOO_LARGE");
+    return entries.map(entry => {
+      const match = /^(100644|100755) blob ([a-f0-9]{40})\t(.+)$/.exec(entry);
+      if (!match) return fail("UNSAFE_GIT_TREE");
+      const path = safePath(match[3]);
+      const bytes = this.run(dir, ["cat-file", "blob", match[2]!]);
+      total += bytes.length;
+      if (total > 20 * 1024 * 1024) fail("SNAPSHOT_TOO_LARGE");
+      return { path, bytes };
     });
   }
 
