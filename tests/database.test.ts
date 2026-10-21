@@ -24,11 +24,15 @@ test("fresh migration matches schema, is repeatable and detects tampering", () =
       inspection.prepare(schema).all(),
       expected.prepare(schema).all()
     );
+    const appliedMigrations = inspection
+      .prepare("SELECT name FROM _migrations ORDER BY name")
+      .all()
+      .map(row => row.name);
+    // Include main's disputes migration and this branch's notification reads.
+    assert.ok(appliedMigrations.includes("0013_disputes.sql"));
+    assert.ok(appliedMigrations.includes("0014_notification_reads.sql"));
     assert.deepEqual(
-      inspection
-        .prepare("SELECT name FROM _migrations ORDER BY name")
-        .all()
-        .map(row => row.name),
+      appliedMigrations,
       readdirSync("packages/database/migrations")
         .filter(name => name.endsWith(".sql"))
         .sort()
