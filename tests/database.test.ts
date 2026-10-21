@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -24,10 +24,14 @@ test("fresh migration matches schema, is repeatable and detects tampering", () =
       inspection.prepare(schema).all(),
       expected.prepare(schema).all()
     );
-    assert.equal(
-      inspection.prepare("SELECT count(*) AS count FROM _migrations").get()!
-        .count,
-      14
+    assert.deepEqual(
+      inspection
+        .prepare("SELECT name FROM _migrations ORDER BY name")
+        .all()
+        .map(row => row.name),
+      readdirSync("packages/database/migrations")
+        .filter(name => name.endsWith(".sql"))
+        .sort()
     );
     inspection.exec("UPDATE _migrations SET checksum = 'modified'");
     assert.throws(() => database.migrate(), /modified/);
