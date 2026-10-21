@@ -45,7 +45,7 @@ test("unknown paths and unsupported methods return generic JSON errors", () => {
 
 test("frontend entry and compiled browser module are served", () => {
   assert.match(request("/").body, /OctoAgent/);
-  assert.match(request("/app.js").body, /\/api\/health/);
+  assert.match(request("/app.js").body, /mountInteractions/);
 });
 
 test("internal errors contain only a stable public message", () => {
@@ -54,4 +54,32 @@ test("internal errors contain only a stable public message", () => {
     error: { code: "INTERNAL_ERROR", message: "服务暂时不可用" },
     request_id: "test-request"
   });
+});
+
+test("console is anonymous and preview contains only synthetic context", () => {
+  const anonymous = request("/console/contracts?state=empty");
+  assert.equal(anonymous.status, 401);
+  assert.match(anonymous.body, /请先登录/);
+  assert.doesNotMatch(anonymous.body, /Agent 动作摘要|aria-label="主导航"/);
+  const preview = request("/preview/contracts");
+  assert.equal(preview.status, 200);
+  assert.match(preview.body, /演示模式/);
+  assert.match(preview.body, /aria-current="page">合同/);
+  assert.equal(preview.headers.get("Cache-Control"), "no-store");
+  assert.equal(request("/preview/missing").status, 404);
+  assert.equal(request("/preview?state=forbidden").status, 403);
+  assert.match(request("/preview?state=failed").body, /加载失败/);
+  assert.match(request("/preview?state=loading").body, /aria-busy="true"/);
+  assert.match(request("/preview?state=unknown").body, /尚无交付记录/);
+});
+
+test("styles are explicitly served and business routes remain unavailable", () => {
+  for (const asset of ["/tokens.css", "/app.css"]) {
+    assert.equal(
+      request(asset).headers.get("Content-Type"),
+      "text/css; charset=utf-8"
+    );
+  }
+  assert.equal(request("/preview/requirements", "POST").status, 404);
+  assert.equal(request("/api/contracts").status, 404);
 });

@@ -14,8 +14,8 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "format": "prettier --write '**/*.{ts,json,md,yml,html}'",
-    "format:check": "prettier --check '**/*.{ts,json,md,yml,html}'",
+    "format": "prettier --write '**/*.{ts,json,md,yml,html,css}'",
+    "format:check": "prettier --check '**/*.{ts,json,md,yml,html,css}'",
     "dev": "npm run build && node --env-file-if-exists=.env dist/apps/server/src/main.js",
     "start": "node --env-file-if-exists=.env dist/apps/server/src/main.js",
     "db:migrate": "npm run build && node --env-file-if-exists=.env dist/packages/database/src/migrate.js",

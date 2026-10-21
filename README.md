@@ -1,6 +1,6 @@
 # OctoAgent
 
-Issue #1 的可运行 TypeScript monorepo 基线；暂不包含登录、业务流程或外部服务。
+可运行的 TypeScript monorepo 基线与 Issue #2 品牌化应用壳；暂不包含真实认证、业务流程或外部服务。
 
 ## 本地启动
 
@@ -22,7 +22,7 @@ npm run dev
 
 需求第 7 节的 Next.js / Prisma 是默认建议。本次执行环境不能访问 npm，缓存中也没有这两个依赖，因此选择可离线验证的 Node.js 原生 HTTP、浏览器 DOM、TypeScript **5.9.3** 和 Node 内置 SQLite（该 Node 版本会显示实验性提示）。暂不引入框架、ORM 或 MCP SDK，避免在基线中加入无法验证的依赖。格式工具使用缓存可用的 Prettier **1.19.1**；依赖精确版本及完整性散列记录在 `package-lock.json`，统一使用 `npm ci` 安装。
 
-- `apps/web`：最小启动页和浏览器 TypeScript；仅允许显式列出的静态资源。
+- `apps/web`：应用壳渲染、品牌样式和浏览器交互；仅允许显式列出的静态资源。
 - `apps/server`：HTTP 入口、健康检查和公共错误处理。
 - `packages/shared`：浏览器/服务端共用的纯类型，不依赖数据库、环境变量或 Node API。
 - `packages/database`：数据库接口、SQLite adapter、schema 和有序 SQL 迁移。
@@ -61,3 +61,13 @@ GitHub Actions 使用 `.nvmrc` 固定 Node，按 lockfile 缓存 npm，执行 `n
 API 使用 `ApiResult<T>` 判别联合：成功为 `{ ok: true, data, request_id }`；失败为 `{ ok: false, error: { code, message }, request_id }`。当前公共错误码为 `NOT_FOUND`（404）和 `INTERNAL_ERROR`（500）；HTTP header `X-Request-Id` 与响应 ID 一致，由服务端生成，不信任客户端传入 ID。内部异常不直接返回或记录，避免泄漏数据库地址、路径或凭据。共享 TypeScript 类型不是运行时校验，后续有输入的接口必须在服务端增加校验。
 
 未来业务 API 和 MCP 需要在各自 issue 中扩展业务状态、下一步、摘要与人工确认字段；本次健康检查不是业务操作，不提前实现这些规则。
+
+## 应用壳与状态演示（Issue #2）
+
+访问 `/` 或 `/console` 呈现未登录提示；当前尚未接入认证。访问 `/preview` 可查看**公开、合成数据**的登录后布局，包含需求、报价、合同、工作区和验收入口，入口仅展示占位页，不执行业务动作。演示身份不会存储为会话，也不会授权任何 API。页面底部可切换加载、失败、权限不足、404、空数据和表单错误；表单仅在本地检查必填项，不保存内容。
+
+`apps/web/tokens.css` 集中定义品牌颜色、字体、间距和形状；`app.css` 使用这些 tokens，并在 760px 以下改为单栏和两列关键操作。`src/shell.ts` 提供 Logo、状态页、Agent 动作摘要与服务端 HTML 渲染，输入组织名称和动作内容均转义。`src/main.ts` 只负责重试和演示表单交互。导航使用原生链接，表单支持键盘提交，提供跳转主内容链接、焦点样式及语义标签。
+
+真实身份接入时，应由服务端提供 `Session`（组织上下文与权限），不得使用演示路由、URL 参数或浏览器存储作为身份依据。渲染器会过滤未授权入口和正文，但这不是业务授权层；后续每个业务 API 仍须独立验证会话、组织和对象权限。当前没有业务数据查询或写入接口。
+
+离线测试覆盖 HTML 渲染、权限上下文、状态隔离、HTML 转义、导航路由、原生事件处理和响应式样式约束；不依赖浏览器下载或外部服务。

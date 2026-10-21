@@ -1,3 +1,4 @@
+import { renderConsole, pages, ViewState } from "../../web/src/shell.js";
 import { randomUUID } from "node:crypto";
 import { IncomingMessage, ServerResponse } from "node:http";
 import { readFileSync } from "node:fs";
@@ -35,8 +36,54 @@ export function handleRequest(
       response.end(JSON.stringify(body));
       return;
     }
+    if (
+      request.method === "GET" &&
+      (path === "/" ||
+        path === "/console" ||
+        path.startsWith("/console/") ||
+        path === "/preview" ||
+        path.startsWith("/preview/"))
+    ) {
+      const preview = path === "/preview" || path.startsWith("/preview/");
+      const page = path.split("/")[2] || "home";
+      const requestedState = new URL(
+        request.url || "/",
+        "http://localhost"
+      ).searchParams.get("state");
+      const states: readonly string[] = [
+        "empty",
+        "loading",
+        "failed",
+        "forbidden",
+        "not-found",
+        "form-error"
+      ];
+      const state =
+        preview && requestedState && states.includes(requestedState)
+          ? (requestedState as ViewState)
+          : undefined;
+      // Public synthetic preview only. Never derive a real session from URL input.
+      const session = preview
+        ? {
+            organization: "演示组织",
+            permissions: Object.values(pages).map(page => page.permission)
+          }
+        : null;
+      response.statusCode = !preview
+        ? 401
+        : !Object.hasOwn(pages, page) || state === "not-found"
+        ? 404
+        : state === "forbidden"
+        ? 403
+        : 200;
+      response.setHeader("Content-Type", "text/html; charset=utf-8");
+      response.setHeader("Cache-Control", "no-store");
+      response.end(renderConsole({ session, page, preview, state }));
+      return;
+    }
     const assets: Record<string, [string, string]> = {
-      "/": ["apps/web/index.html", "text/html; charset=utf-8"],
+      "/tokens.css": ["apps/web/tokens.css", "text/css; charset=utf-8"],
+      "/app.css": ["apps/web/app.css", "text/css; charset=utf-8"],
       "/app.js": ["dist/apps/web/src/main.js", "text/javascript; charset=utf-8"]
     };
     const asset = Object.hasOwn(assets, path) ? assets[path] : undefined;
