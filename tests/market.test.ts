@@ -275,6 +275,49 @@ test("confirmation expires and published requirement changes require a new bid v
   }
 });
 
+test("published scope changes exclude old bids until a new version is confirmed", () => {
+  const f = fixture();
+  try {
+    const id = f.publish();
+    const first = f.submit(f.seller, id);
+    const second = f.submit(f.second, id);
+    const task = f.req.read(f.buyer, id);
+    f.req.save(f.buyer, id, task.revision, {
+      ...f.draft,
+      values: { ...f.draft.values, goal: "新的交付范围" }
+    });
+    assert.equal(f.market.compare(f.buyer, id).length, 2);
+    f.req.publish(f.buyer, id, f.req.preview(f.buyer, id).confirmation, true);
+    for (const sort of ["risk", "days", "capabilities", "price"])
+      assert.deepEqual(f.market.compare(f.buyer, id, sort), []);
+    const history = f.market.listBids(f.buyer, id);
+    assert.deepEqual(
+      new Set(history.map(b => b.id)),
+      new Set([first.id, second.id])
+    );
+    assert.ok(
+      history.every(
+        b => b.task_version === 1 && b.stale && b.status === "submitted"
+      )
+    );
+    const next = f.market.draft(f.seller, id, offer);
+    assert.equal(next.task_version, 2);
+    assert.deepEqual(f.market.compare(f.buyer, id), []);
+    const proof = f.market.preview(f.seller, next.id);
+    f.market.submit(f.seller, next.id, proof.confirmation, true);
+    assert.deepEqual(
+      f.market.compare(f.buyer, id).map(b => b.id),
+      [next.id]
+    );
+    assert.equal(f.market.bid(f.buyer, next.id).stale, false);
+    assert.equal(f.market.listBids(f.buyer, id).length, 3);
+    f.market.withdraw(f.seller, next.id);
+    assert.deepEqual(f.market.compare(f.buyer, id), []);
+  } finally {
+    f.db.close();
+  }
+});
+
 test("comparison supports two bidders and never defaults to cheapest; cross-bid reads deny uniformly", () => {
   const f = fixture();
   try {
@@ -503,15 +546,17 @@ test("comparison renders separate columns, evidence and permission rows as text"
   const root = ({ createElement: () => new Element() } as unknown) as Document;
   const container = new Element();
   renderComparison(root, (container as unknown) as HTMLElement, [
-    { owner_id: "seller", version: 1, proposal: offer },
+    { owner_id: "seller", version: 1, task_version: 2, proposal: offer },
     {
       owner_id: "seller-two",
       version: 1,
+      task_version: 2,
       proposal: { ...offer, summary: "<script>untrusted</script>" }
     }
   ]);
   const rows = container.children[0]!.children;
   assert.ok(rows.every(r => r.children.length === 3));
+  assert.match(rows[0]!.children[1]!.textContent, /需求版本 2/);
   assert.equal(rows[1]!.children[2]!.textContent, "<script>untrusted</script>");
   assert.ok(rows.some(r => r.children[0]!.textContent === "访问权限需求"));
   assert.ok(rows.some(r => r.children[0]!.textContent === "可交付证据"));

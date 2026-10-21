@@ -258,21 +258,6 @@ export function mountRequirementEditor(root: Document) {
           private: !input("attachment-public").checked
         }
       );
-      if (input("market-enabled")) {
-        input("market-enabled").checked = !!data.draft.market;
-        const market = data.draft.market;
-        input("market-deadline").value = market
-          ? new Date(
-              market.deadline -
-                new Date(market.deadline).getTimezoneOffset() * 60000
-            )
-              .toISOString()
-              .slice(0, 16)
-          : "";
-        input("market-days").value = market ? String(market.durationDays) : "";
-        input("market-risk").value = market?.risk || "low";
-        input("market-agents").checked = market?.allowAgents || false;
-      }
       revision = data.revision;
       displayAttachments(data.attachments);
       status.textContent = "附件元数据已保存；表单中的编辑已保留，请保存草稿。";

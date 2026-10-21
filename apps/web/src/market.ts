@@ -202,7 +202,12 @@ export function mountMarket(root: Document) {
   });
   on("history", async () => {
     input("versions").textContent = JSON.stringify(
-      await api(task() + "/bids"),
+      (await api(task() + "/bids")).map((bid: { stale: boolean }) => ({
+        ...bid,
+        需求版本状态: bid.stale
+          ? "历史需求版本，不参与有效比较"
+          : "当前需求版本"
+      })),
       null,
       2
     );
@@ -232,7 +237,12 @@ export function mountMarket(root: Document) {
 export function renderComparison(
   root: Document,
   container: HTMLElement,
-  bids: { owner_id: string; version: number; proposal: Proposal }[]
+  bids: {
+    owner_id: string;
+    version: number;
+    task_version: number;
+    proposal: Proposal;
+  }[]
 ) {
   container.replaceChildren();
   if (!bids.length) {
@@ -243,7 +253,9 @@ export function renderComparison(
   const header = root.createElement("tr");
   for (const label of [
     "比较维度",
-    ...bids.map(b => `${b.owner_id} · 版本 ${b.version}`)
+    ...bids.map(
+      b => `${b.owner_id} · 报价版本 ${b.version} · 需求版本 ${b.task_version}`
+    )
   ]) {
     const th = root.createElement("th");
     th.textContent = label;

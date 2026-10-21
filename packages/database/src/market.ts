@@ -195,13 +195,14 @@ export class Market {
     return { bid, ...context };
   }
   bid(token: string, id: string) {
-    const { bid } = this.bidAccess(token, id);
+    const { bid, row } = this.bidAccess(token, id);
     return {
       id: String(bid.id),
       owner_id: String(bid.owner_id),
       status: String(bid.status),
       version: Number(bid.version),
       task_version: Number(bid.task_version),
+      stale: bid.task_version !== row.version,
       requirement_id: String(bid.requirement_id),
       proposal: JSON.parse(String(bid.proposal)) as Proposal
     };
@@ -341,7 +342,7 @@ export class Market {
       latest.set(String(bid.owner_id), bid);
     const risk = { low: 0, medium: 1, high: 2 };
     return [...latest.values()]
-      .filter(b => b.status === "submitted")
+      .filter(b => b.status === "submitted" && !b.stale)
       .sort((a, b) => {
         const score = (p: Proposal) =>
           sort === "risk"
