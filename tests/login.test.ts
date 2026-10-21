@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync } from "node:fs";
 import { Readable } from "node:stream";
+import { setImmediate } from "node:timers/promises";
 import { IncomingMessage, ServerResponse } from "node:http";
 import {
   Authorization,
@@ -35,19 +36,22 @@ async function fixture(production = false) {
     method = "GET",
     headers: Record<string, string> = {},
     body?: unknown,
-    raw?: string[]
+    raw?: string[],
+    address = "127.0.0.1"
   ) =>
     new Promise<{ status: number; headers: Record<string, string>; body: any }>(
       resolve => {
-        const req = Readable.from(
-          body === undefined ? [] : [JSON.stringify(body)]
-        ) as IncomingMessage;
+        const req = (body instanceof Readable
+          ? body
+          : Readable.from(
+              body === undefined ? [] : [JSON.stringify(body)]
+            )) as IncomingMessage;
         req.url = url;
         req.method = method;
         req.headers = headers;
         req.rawHeaders = raw || Object.entries(headers).flat();
         Object.defineProperty(req, "socket", {
-          value: { remoteAddress: "127.0.0.1" }
+          value: { remoteAddress: address }
         });
         const output: Record<string, string> = {};
         const res = {
@@ -96,6 +100,101 @@ async function fixture(production = false) {
     }
   };
 }
+
+test("unfinished login bodies do not reserve verification slots and have a total deadline", async t => {
+  const f = await fixture();
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const streams = Array.from({ length: 4 }, () => new Readable({ read() {} }));
+  try {
+    const pending = streams.map((stream, i) =>
+      f.call(
+        "/api/auth/login",
+        "POST",
+        { "content-type": "application/json", "x-octo-login": "1" },
+        stream,
+        undefined,
+        `192.0.2.${i + 1}`
+      )
+    );
+    for (const stream of streams) stream.push('{"username":');
+    await setImmediate();
+    assert.equal((await f.signIn()).status, 200);
+    t.mock.timers.tick(4_999);
+    assert.ok(streams.every(stream => !stream.destroyed));
+    // Receiving more bytes does not extend the total deadline.
+    for (const stream of streams) stream.push('"unfinished"');
+    await setImmediate();
+    t.mock.timers.tick(1);
+    assert.ok(streams.every(stream => stream.destroyed));
+    for (const result of await Promise.all(pending)) {
+      assert.equal(result.status, 401);
+      assert.equal(result.headers["Set-Cookie"], undefined);
+    }
+    assert.equal((await f.signIn()).status, 200);
+  } finally {
+    streams.forEach(stream => stream.destroy());
+    t.mock.timers.reset();
+    f.db.close();
+  }
+});
+
+test("aborted and oversized login bodies never reach password verification", async t => {
+  const f = await fixture();
+  const verify = t.mock.method(f.accounts, "verify");
+  try {
+    const stream = new Readable({ read() {} });
+    const pending = f.call(
+      "/api/auth/login",
+      "POST",
+      { "content-type": "application/json", "x-octo-login": "1" },
+      stream
+    );
+    await setImmediate();
+    stream.destroy();
+    assert.equal((await pending).status, 401);
+    const oversized = Readable.from([Buffer.alloc(4097)]);
+    assert.equal(
+      (
+        await f.call(
+          "/api/auth/login",
+          "POST",
+          { "content-type": "application/json", "x-octo-login": "1" },
+          oversized
+        )
+      ).status,
+      401
+    );
+    assert.equal(verify.mock.callCount(), 0);
+    await setImmediate(); // Let the async iterator finish closing the stream.
+    assert.ok(oversized.destroyed);
+    assert.equal((await f.signIn()).status, 200);
+  } finally {
+    f.db.close();
+  }
+});
+
+test("password verification remains bounded and releases slots on errors", async t => {
+  const f = await fixture();
+  let reject!: (error: Error) => void;
+  const verification = new Promise<string | undefined>((_, fail) => {
+    reject = fail;
+  });
+  const verify = t.mock.method(f.accounts, "verify", () => verification);
+  try {
+    const pending = Array.from({ length: 4 }, () => f.signIn());
+    await setImmediate();
+    assert.equal(verify.mock.callCount(), 4);
+    assert.equal((await f.signIn()).status, 429);
+    reject(new Error("Synthetic verification failure"));
+    for (const result of await Promise.all(pending))
+      assert.equal(result.status, 401);
+    verify.mock.restore();
+    f.advance(60_000);
+    assert.equal((await f.signIn()).status, 200);
+  } finally {
+    f.db.close();
+  }
+});
 
 test("local password login, Cookie business access, CSRF, logout and safe persistence", async () => {
   const f = await fixture();

@@ -84,22 +84,29 @@ export class Login {
         };
         if (
           entry.count >= 5 ||
-          this.active >= 4 ||
           (!this.attempts.has(key) && this.attempts.size >= 1024)
         )
           return send(429);
         entry.count++;
         this.attempts.set(key, entry);
-        this.active++;
+        // Bound total body-read time, including clients that keep trickling data.
+        // Slow uploads must never reserve a password-verification slot.
+        const deadline = setTimeout(() => request.destroy(), 5_000);
+        const chunks: Buffer[] = [];
         try {
           let bytes = 0;
-          const chunks: Buffer[] = [];
           for await (const chunk of request) {
             bytes += Buffer.byteLength(chunk);
             if (bytes > 4096) return send(401);
             chunks.push(Buffer.from(chunk));
           }
-          const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+        } finally {
+          clearTimeout(deadline);
+        }
+        const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+        if (this.active >= 4) return send(429);
+        this.active++;
+        try {
           const user = await this.accounts.verify(
             body?.username,
             body?.password
