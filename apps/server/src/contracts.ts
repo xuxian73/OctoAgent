@@ -5,10 +5,7 @@ import {
   safeDiagnostic
 } from "../../../packages/security/src/index.js";
 import { IncomingMessage, ServerResponse } from "node:http";
-import {
-  bearerToken,
-  ForbiddenError
-} from "../../../packages/auth/src/index.js";
+import { webToken, ForbiddenError } from "../../../packages/auth/src/index.js";
 import {
   Contracts,
   contractBodyLimit
@@ -30,7 +27,7 @@ async function executeRoute(
     const id = path[3] || "";
     const action = path[4];
     const method = request.method;
-    const token = bearerToken(request);
+    const token = webToken(request);
     let body: Record<string, unknown> = {};
     if (method === "POST" || method === "PUT") {
       if (request.headers["content-type"]?.split(";")[0] !== "application/json")

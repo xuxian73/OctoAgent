@@ -287,7 +287,7 @@ test("workspace HTTP returns evidence and uniform forbidden errors", async () =>
   }
 });
 
-test("buyer evidence page renders structured evidence and clears on identity change", async () => {
+test("buyer evidence page renders structured evidence and clears on contract change", async () => {
   const { mountWorkspaces, renderWorkspaces } = await import(
     "../apps/web/src/workspaces.js"
   );
@@ -316,6 +316,7 @@ test("buyer evidence page renders structured evidence and clears on identity cha
   } as unknown) as Document;
   const original = globalThis.fetch;
   globalThis.fetch = ((async () => ({
+    ok: true,
     json: async () => ({
       ok: true,
       data: {
@@ -341,7 +342,7 @@ test("buyer evidence page renders structured evidence and clears on identity cha
     assert.match(elements.get("checks")!.textContent, /PASS/);
     assert.match(elements.get("risks")!.textContent, /需要人工验证/);
     assert.match(elements.get("artifacts")!.textContent, /verified/);
-    elements.get("session")!.dispatchEvent(new Event("input"));
+    elements.get("contract")!.dispatchEvent(new Event("input"));
     assert.equal(elements.get("artifacts")!.textContent, "");
   } finally {
     globalThis.fetch = original;

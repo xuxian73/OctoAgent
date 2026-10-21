@@ -1,3 +1,6 @@
+import { Login } from "./login.js";
+import { sessionCookie, webToken } from "../../../packages/auth/src/index.js";
+import { renderLogin, renderSignedIn } from "../../web/src/session.js";
 import { Workspaces } from "../../../packages/database/src/workspaces.js";
 import { workspaceRoute } from "./workspaces.js";
 import { renderWorkspaces } from "../../web/src/workspaces.js";
@@ -43,13 +46,45 @@ export function handleRequest(
   requirements?: Requirements,
   market?: Market,
   contracts?: Contracts,
-  workspaces?: Workspaces
+  workspaces?: Workspaces,
+  login?: Login
 ): void {
   const requestId = randomUUID();
   response.setHeader("X-Request-Id", requestId);
   response.setHeader("X-Content-Type-Options", "nosniff");
   try {
     const path = new URL(request.url || "/", "http://localhost").pathname;
+    response.setHeader("Cache-Control", "no-store");
+    if (path.startsWith("/api/auth/")) {
+      if (!login) throw new ForbiddenError();
+      void login.route(request, response, requestId);
+      return;
+    }
+    if (path === "/login" && request.method === "GET") {
+      response.setHeader("Content-Type", "text/html; charset=utf-8");
+      response.end(renderLogin());
+      return;
+    }
+    const cookie = sessionCookie(request);
+    if (
+      cookie !== undefined &&
+      (path.startsWith("/api/") || path === "/" || path.startsWith("/console"))
+    ) {
+      if (
+        !authorization ||
+        authorization.identity(webToken(request)).kind !== "user"
+      )
+        throw new ForbiddenError();
+    }
+    if (
+      cookie !== undefined &&
+      request.method === "GET" &&
+      (path === "/" || path === "/console" || path.startsWith("/console/"))
+    ) {
+      response.setHeader("Content-Type", "text/html; charset=utf-8");
+      response.end(renderSignedIn());
+      return;
+    }
     if (path === "/api/workspaces" || path.startsWith("/api/workspaces/")) {
       void workspaceRoute(request, response, requestId, workspaces);
       return;
@@ -171,6 +206,10 @@ export function handleRequest(
       return;
     }
     const assets: Record<string, [string, string]> = {
+      "/session.js": [
+        "dist/apps/web/src/session.js",
+        "text/javascript; charset=utf-8"
+      ],
       "/workspaces.js": [
         "dist/apps/web/src/workspaces.js",
         "text/javascript; charset=utf-8"

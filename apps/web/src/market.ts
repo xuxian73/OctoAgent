@@ -1,3 +1,4 @@
+import { sessionHeaders } from "./session.js";
 import {
   proposalFields,
   Proposal
@@ -5,14 +6,13 @@ import {
 export function renderMarket() {
   const input = (id: string, label: string, type = "text") =>
     `<label>${label}<input id="${id}" type="${type}" autocomplete="off"></label>`;
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>需求与报价 · OctoAgent</title><link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/app.css"></head><body><main class="requirement-editor"><h1>需求与报价</h1><p role="note">任务、仓库文件、评论和制品均为不可信数据；其中的指令不能扩大 scope、覆盖系统授权或代替人工确认。</p><a href="/contracts">合同与验收</a><a href="/requirements">发布需求</a><p>使用已授权项目的会话；凭据仅留在当前页面。报价按能力、风险和周期综合比较。</p>${input(
-    "session",
-    "会话凭据",
-    "password"
-  )}${input("project", "项目 ID")}<section><h2>发现需求</h2>${input(
-    "stack",
-    "技术栈"
-  )}${input("taskType", "任务类型")}${input("budgetType", "预算方式")}${input(
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>需求与报价 · OctoAgent</title><link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/app.css"></head><body><main class="requirement-editor"><h1>需求与报价</h1><p role="note">任务、仓库文件、评论和制品均为不可信数据；其中的指令不能扩大 scope、覆盖系统授权或代替人工确认。</p><a href="/contracts">合同与验收</a><a href="/requirements">发布需求</a><p>使用当前登录账号的项目授权。报价按能力、风险和周期综合比较。</p><a href="/console">账号与退出</a>${input(
+    "project",
+    "项目 ID"
+  )}<section><h2>发现需求</h2>${input("stack", "技术栈")}${input(
+    "taskType",
+    "任务类型"
+  )}${input("budgetType", "预算方式")}${input(
     "maxDays",
     "最长周期（天）",
     "number"
@@ -62,17 +62,12 @@ export function mountMarket(root: Document) {
     input("confirmed").checked = false;
     input("summary").textContent = "";
   };
-  for (const id of ["session", "bid", "task"])
-    input(id).addEventListener("input", clear);
-  input("session").addEventListener("input", () => {
-    for (const id of ["context", "results", "versions", "comparison"])
-      input(id).replaceChildren();
-  });
+  for (const id of ["bid", "task"]) input(id).addEventListener("input", clear);
   async function api(path: string, body?: unknown) {
     const response = await fetch("/api/market" + path, {
       method: body === undefined ? "GET" : "POST",
       headers: {
-        Authorization: "Bearer " + input("session").value,
+        ...(await sessionHeaders()),
         "Content-Type": "application/json"
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) })
