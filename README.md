@@ -94,7 +94,7 @@ Agent 还必须满足 token scope，不能执行 delegate。scope 结构为 `{ k
 
 ## 需求草稿与发布（Issue #4）
 
-访问 `/requirements` 使用结构化表单创建、保存和按 ID 加载草稿。先在 `/login` 登录，再输入明确授权的项目 ID；浏览器自动发送 HttpOnly Cookie，并从当前身份接口获取仅存内存的 CSRF 校验值。凭据不写浏览器存储、URL、日志或测试种子。所有数据请求由服务端重新验证甲方角色、组织/项目成员关系及项目 read/write grant。Agent 可以在授权范围内编辑草稿，但不能取得发布确认或发布。
+访问 `/requirements` 使用结构化表单创建、保存和按 ID 加载草稿。先在 `/login` 登录，再从组织 / 项目列表选择明确授权的项目；浏览器自动发送 HttpOnly Cookie，并从当前身份接口获取仅存内存的 CSRF 校验值。凭据不写浏览器存储、URL、日志或测试种子。所有数据请求由服务端重新验证甲方角色、组织/项目成员关系及项目 read/write grant。Agent 可以在授权范围内编辑草稿，但不能取得发布确认或发布。
 
 表单覆盖 8 种任务类型、3 种预算方式，唯一结算币种为 CNY；按小时金额表示时薪，按里程碑填写总额及里程碑分配说明。草稿允许缺失，保存后返回缺失字段和风险提示；发布要求全部字段完整、金额有效。没有仓库、权限等情况请明确填写“无”。里程碑分配和验收条款目前为文本，由甲方在摘要中审核。
 
@@ -189,3 +189,13 @@ python3 -c 'import getpass; print(getpass.getpass("Password: "))' | npm run acco
 Cookie 写请求必须带当前身份接口提供的 `X-CSRF-Token`；该值与会话绑定，只存在页面内存。Web API 仍兼容原有 Bearer 客户端，MCP 仅接受 Bearer；同时提供会话 Cookie 与 Authorization、重复会话 Cookie 或重复 Authorization 会被拒绝。登录不启用 CORS，跨站登录请求被拒绝。
 
 登录每个 TCP 来源地址每分钟最多 5 次尝试（包含成功），最多保留 1024 个来源窗口，最多并发 4 个验证请求，超限返回 429；不信任转发 IP 头。此限流适用于当前单进程部署，重启会重置，多实例或反向代理部署应在入口额外配置共享限流。审计仅记录登录结果、请求 ID，以及现有会话签发/撤销摘要，不记录输入账号、密码、Cookie 或 CSRF 原文。
+
+## 首次使用与项目上下文（Issue #22）
+
+完成本地账号登录后，无项目的新账户从控制台进入 `/onboarding`。填写组织和项目名称后，一次创建组织、项目及两级甲方成员关系，仅授予组织 read 和项目 read/write，随后进入需求草稿页面。已有项目成员关系的账户不能初始化；初始化记录永久保留，撤销成员或 grant 后不会重新开放创建入口。
+
+- `POST /api/onboarding`：仅接受人类身份，JSON 为 `{ "organizationName": "组织名称", "projectName": "项目名称" }`，名称不能为空且最长 80 字符；不接受用户 ID、角色或额外授权字段。必须提供 `Idempotency-Key`，Cookie 请求同时要求 CSRF。
+- `GET /api/contexts`：返回当前用户获准读取的 `organizations`、`projects` 和 `canInitialize`。名称缺失的既有组织、项目使用 ID 显示；每次查询重新检查成员与显式 read grant。
+- 创建、授权、审计和幂等记录在同一事务内提交。相同 key 与请求体返回原结果，变更请求体或再次初始化返回 409；重放仍校验当前授权。名称不写入审计。
+
+部署时运行现有迁移命令应用 `0012_onboarding.sql`。无需通过 SQL 或演示种子建立首个组织和项目。

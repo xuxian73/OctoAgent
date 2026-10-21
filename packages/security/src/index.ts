@@ -10,7 +10,7 @@ export interface AuditObject {
   permissionChange?: {
     permission: string;
     action: "grant" | "revoke";
-    expiresAt: number;
+    expiresAt: number | null;
   };
 }
 export interface RequestContext {

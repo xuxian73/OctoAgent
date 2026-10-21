@@ -1,3 +1,6 @@
+import { Onboarding } from "../../../packages/database/src/onboarding.js";
+import { onboardingRoute } from "./onboarding.js";
+import { renderOnboarding } from "../../web/src/onboarding.js";
 import { Login } from "./login.js";
 import { sessionCookie, webToken } from "../../../packages/auth/src/index.js";
 import { renderLogin, renderSignedIn } from "../../web/src/session.js";
@@ -47,7 +50,8 @@ export function handleRequest(
   market?: Market,
   contracts?: Contracts,
   workspaces?: Workspaces,
-  login?: Login
+  login?: Login,
+  onboarding?: Onboarding
 ): void {
   const requestId = randomUUID();
   response.setHeader("X-Request-Id", requestId);
@@ -63,6 +67,20 @@ export function handleRequest(
     if (path === "/login" && request.method === "GET") {
       response.setHeader("Content-Type", "text/html; charset=utf-8");
       response.end(renderLogin());
+      return;
+    }
+    if (path === "/api/onboarding" || path === "/api/contexts") {
+      void onboardingRoute(request, response, requestId, onboarding);
+      return;
+    }
+    if (path === "/onboarding" && request.method === "GET") {
+      if (
+        !authorization ||
+        authorization.identity(webToken(request)).kind !== "user"
+      )
+        throw new ForbiddenError();
+      response.setHeader("Content-Type", "text/html; charset=utf-8");
+      response.end(renderOnboarding());
       return;
     }
     const cookie = sessionCookie(request);
@@ -82,7 +100,11 @@ export function handleRequest(
       (path === "/" || path === "/console" || path.startsWith("/console/"))
     ) {
       response.setHeader("Content-Type", "text/html; charset=utf-8");
-      response.end(renderSignedIn());
+      if (onboarding?.list(webToken(request)).canInitialize) {
+        response.statusCode = 303;
+        response.setHeader("Location", "/onboarding");
+        response.end();
+      } else response.end(renderSignedIn());
       return;
     }
     if (path === "/api/workspaces" || path.startsWith("/api/workspaces/")) {
@@ -206,6 +228,10 @@ export function handleRequest(
       return;
     }
     const assets: Record<string, [string, string]> = {
+      "/onboarding.js": [
+        "dist/apps/web/src/onboarding.js",
+        "text/javascript; charset=utf-8"
+      ],
       "/session.js": [
         "dist/apps/web/src/session.js",
         "text/javascript; charset=utf-8"
