@@ -218,6 +218,7 @@ export class Contracts {
     return {
       ...row,
       id: String(row.id),
+      seller_id: String(row.seller_id),
       version: Number(row.version),
       revision: Number(row.revision),
       status: String(row.status),
@@ -248,6 +249,8 @@ export class Contracts {
         .all(id)
         .map(e => ({
           ...e,
+          kind: String(e.kind),
+          sequence: Number(e.sequence),
           actor_id: String(e.actor_id),
           created_at: Number(e.created_at),
           payload: JSON.parse(String(e.payload))

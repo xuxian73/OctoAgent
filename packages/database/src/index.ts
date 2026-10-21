@@ -1,3 +1,4 @@
+import { Workspaces } from "./workspaces.js";
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -13,6 +14,7 @@ import { IdentityStore } from "../../auth/src/model.js";
 // Services depend on this interface, not a driver or SQL dialect.
 export interface Database {
   readonly identities: IdentityStore;
+  workspaces(auth: Authorization): Workspaces;
   contracts(auth: Authorization): Contracts;
   market(auth: Authorization): Market;
   requirements(auth: Authorization): Requirements;
@@ -31,6 +33,7 @@ export function openDatabase(url: string): Database {
   connection.exec("PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
   return {
     identities: new SqliteIdentityStore(connection),
+    workspaces: auth => new Workspaces(connection, auth),
     contracts: auth => new Contracts(connection, auth),
     market: auth => new Market(connection, auth),
     requirements: auth => new Requirements(connection, auth),
