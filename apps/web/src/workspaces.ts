@@ -26,7 +26,8 @@ export function mountWorkspaces(root: Document = document) {
     root,
     () => value("contract"),
     () => value("file-milestone"),
-    () => party
+    () => party,
+    message => load(message)
   );
   let version = 0;
   mountFiles(root, () => ({
@@ -46,6 +47,9 @@ export function mountWorkspaces(root: Document = document) {
     el("zip-form").hidden = true;
     connectionPlan = undefined;
     version = 0;
+    party = "";
+    if (el("file-upload")) el("file-upload").hidden = true;
+    el("zip-refresh").hidden = true;
     el("authorization").hidden = true;
     el("git-controls").hidden = true;
     el("github-controls").hidden = true;
@@ -60,22 +64,31 @@ export function mountWorkspaces(root: Document = document) {
     for (const id of [...sections, "status"]) el(id).textContent = "";
   };
   for (const id of ["contract"]) el(id).addEventListener("input", clear);
-  el("load").addEventListener("click", () => {
+  async function load(message = "") {
+    const selectedMilestone = value("file-milestone");
     clear();
     const current = generation;
-    void apiRequest(
+    await apiRequest(
       "/api/workspaces/" +
         encodeURIComponent(value("contract")) +
         ((el("git-extension") as HTMLDetailsElement).open ? "?git=1" : "")
     )
-      .then(data => {
+      .then(async data => {
         if (current !== generation) return;
         version = data.version;
         party = data.party;
         if (el("contract-agents"))
           (el("contract-agents") as HTMLAnchorElement).href =
             "/agents?contract=" + encodeURIComponent(value("contract"));
-        el("authorization").hidden = data.party !== "buyer";
+        el("authorization").hidden =
+          data.party !== "buyer" || data.status !== "active";
+        for (const option of Array.from(el("contract").children)) {
+          if ((option as HTMLOptionElement).value === value("contract"))
+            option.textContent = (option.textContent || "").replace(
+              / · [^·]*$/,
+              " · " + data.status
+            );
+        }
         el("actor").replaceChildren();
         for (const actor of data.actors) {
           const option = root.createElement("option");
@@ -105,6 +118,12 @@ export function mountWorkspaces(root: Document = document) {
           option.textContent = milestone.title;
           el("file-milestone").append(option);
         }
+        if (
+          data.milestones.some(
+            (m: any) => m.id === selectedMilestone && m.version === version
+          )
+        )
+          (el("file-milestone") as HTMLSelectElement).value = selectedMilestone;
         el("github-sha").replaceChildren();
         for (const commit of data.commits) {
           const option = root.createElement("option");
@@ -115,10 +134,10 @@ export function mountWorkspaces(root: Document = document) {
         if ((el("git-extension") as HTMLDetailsElement).open)
           void refreshGitHub(data.party, current);
         void refreshSources();
-        void review.refresh().catch(e => {
-          el("status").textContent = String(e);
-        });
+
         el("file-refresh")?.click();
+        el("zip-refresh").hidden =
+          data.party !== "seller" || data.status !== "active";
         el("zip-form").hidden =
           data.party !== "seller" || data.status !== "active";
         if (el("file-upload"))
@@ -168,13 +187,23 @@ export function mountWorkspaces(root: Document = document) {
           } as Record<string, string>)[data.status] || data.status) +
           (["paused", "disputed"].includes(data.status)
             ? "。请返回合同处理，恢复生效后再交付。"
+            : data.status === "completed"
+            ? "。未付款或部署；可查看交付记录。"
             : "。上传和提交需要甲方授予本合同短期权限。");
+        await review.refresh();
+        if (current === generation && el("zip-review-status"))
+          el("zip-review-status").textContent = message;
       })
       .catch(e => {
         if (current === generation && el("status"))
-          el("status").textContent = "读取失败：" + e.message;
+          el("status").textContent =
+            (message
+              ? message + " 工作区刷新失败，请重新读取交付证据："
+              : "读取失败：") + e.message;
       });
-  });
+  }
+  el("load").addEventListener("click", () => void load());
+  clear();
   async function refreshGitHub(party: string, current: number) {
     try {
       const data = await apiRequest(

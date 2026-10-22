@@ -302,6 +302,7 @@ test("buyer evidence page renders structured evidence and clears on contract cha
   );
   assert.match(renderWorkspaces(), /制品 checksum/);
   class Element extends EventTarget {
+    children: Element[] = [];
     value = "";
     textContent = "";
     append() {}

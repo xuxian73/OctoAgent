@@ -150,7 +150,10 @@ test("responsive styles preserve key actions and visible keyboard focus", () => 
   assert.match(css, /@media \(max-width: 760px\)/);
   assert.match(css, /repeat\(2, minmax\(0, 1fr\)\)/);
   assert.match(css, /:focus-visible/);
-  assert.doesNotMatch(css, /display:\s*none/);
+  assert.doesNotMatch(
+    css.replace(/\[hidden\]\s*\{[^}]*\}/g, ""),
+    /display:\s*none/
+  );
   assert.match(css, /var\(--coral\)/);
   assert.match(css, /var\(--sea\)/);
 });

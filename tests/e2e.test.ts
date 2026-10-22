@@ -152,6 +152,7 @@ test("workspace page loads seeded API evidence and clears it on tenant switch", 
       // Minimal DOM surface: real page event handler, fetch adapter and API service.
       let finished: () => void = () => {};
       class Element extends EventTarget {
+        children: Element[] = [];
         value = "";
         click() {
           this.dispatchEvent(new Event("click"));
