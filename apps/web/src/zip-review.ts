@@ -7,18 +7,26 @@ export function mountZipReview(
   root: Document,
   contract: () => string,
   milestone: () => string,
-  party: () => string = () => "buyer"
+  party: () => string = () => "buyer",
+  onSaved?: (message: string) => Promise<void>
 ) {
   if (!root.getElementById("zip-review"))
     return { refresh: async () => {}, clear: () => {} };
   const el = (id: string) => root.getElementById(id)!;
   const value = (id: string) => (el(id) as HTMLInputElement).value;
   let generation = 0;
+  let selectedContract = contract();
+  let contractGeneration = 0;
   let snapshot: any;
   let target: any;
   let busy = false;
   function clear() {
     generation++;
+    if (selectedContract !== contract()) {
+      selectedContract = contract();
+      contractGeneration++;
+    }
+    el("zip-review-status").textContent = "";
     snapshot = target = undefined;
     el("zip-history").replaceChildren();
     el("zip-review-form").hidden = true;
@@ -104,18 +112,26 @@ export function mountZipReview(
     el("zip-target").textContent = target
       ? `本次处理：第 ${target.delivery_version} 版 · SHA-256 ${target.checksum}`
       : "";
+    const milestones = data.milestones.filter(
+      (m: any) => m.version === data.version
+    );
     el("zip-complete").hidden = !(
       party() === "buyer" &&
       data.status === "active" &&
-      data.milestones
-        .filter((m: any) => m.version === data.version)
-        .every((m: any) => m.status === "accepted")
+      milestones.length > 0 &&
+      milestones.every((m: any) => m.status === "accepted")
     );
   }
   async function command(complete = false) {
-    if (busy || !snapshot) return;
+    if (busy || !snapshot || (complete && el("zip-complete").hidden)) return;
     busy = true;
     const current = generation;
+    const commandContract = snapshot.id;
+    const commandContractGeneration = contractGeneration;
+    let feedbackGeneration = current;
+    let saved = false;
+    (el("zip-complete") as HTMLButtonElement).disabled = true;
+    el("zip-review-status").textContent = "正在保存…";
     try {
       await apiRequest(
         `/api/contracts/${encodeURIComponent(snapshot.id)}/commands`,
@@ -138,17 +154,34 @@ export function mountZipReview(
           }
         }
       );
-      if (current !== generation) return;
-      await refresh();
-      el("zip-review-status").textContent =
-        "已保存。可刷新工作区查看最新状态。";
+      saved = true;
+      // Milestone refreshes must not discard a successful contract command.
+      // A contract switch still invalidates its response, including switching back.
+      if (
+        commandContract !== contract() ||
+        commandContractGeneration !== contractGeneration
+      )
+        return;
+      const message = complete
+        ? "合同已完成；未付款或部署。"
+        : "验收处理已保存。";
+      if (onSaved) await onSaved(message);
+      else {
+        const next = generation + 1;
+        feedbackGeneration = next;
+        await refresh();
+        if (generation === next) el("zip-review-status").textContent = message;
+      }
     } catch (e) {
-      if (current === generation)
-        el("zip-review-status").textContent = `操作未完成：${String(
-          e
-        )}。请刷新工作区、重新下载核对当前版本后确认；权限失效请联系甲方重新授权。`;
+      if (feedbackGeneration === generation)
+        el("zip-review-status").textContent = saved
+          ? "操作已保存，但刷新失败，请读取交付证据查看最新状态。"
+          : `操作未完成：${String(
+              e
+            )}。请刷新工作区、重新下载核对当前版本后确认；权限失效请联系甲方重新授权。`;
     } finally {
       busy = false;
+      (el("zip-complete") as HTMLButtonElement).disabled = false;
     }
   }
   el("zip-review-form").addEventListener("submit", e => {

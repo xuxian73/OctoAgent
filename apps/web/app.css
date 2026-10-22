@@ -1,3 +1,7 @@
+/* Hidden controls must remain absent from layout and keyboard navigation. */
+[hidden] {
+  display: none !important;
+}
 * {
   box-sizing: border-box;
 }

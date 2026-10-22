@@ -116,6 +116,7 @@ test("ZIP web reviews bind displayed immutable version; stale page rejected; rew
     );
     assert.match(el("zip-review-status").textContent, /操作未完成/);
     await panel.refresh();
+    assert.equal(el("zip-review-status").textContent, "");
     assert.equal(el("zip-history").children.length, 2);
     assert.match(el("zip-target").textContent, /第 2 版/);
     el("zip-confirm").checked = true;
@@ -222,12 +223,20 @@ test("workspace uploads same-name same-byte rework and refreshes milestones thro
   const originalXHR = globalThis.XMLHttpRequest;
   let actor = f.seller;
   const errors: string[] = [];
+  let finishCompletion: (() => void) | undefined;
+  let completions = 0;
   globalThis.fetch = (async (url: string, init?: RequestInit) => {
     try {
       let data;
       if (url === "/api/auth/me") data = { csrf: "synthetic" };
       else if (init?.method === "POST") {
         const body = JSON.parse(String(init.body));
+        if (body.to === "completed") {
+          completions++;
+          await new Promise<void>(resolve => {
+            finishCompletion = resolve;
+          });
+        }
         data = url.includes("/workspaces/")
           ? work.command(actor, id, body)
           : f.contracts.command(actor, id, body);
@@ -330,10 +339,121 @@ test("workspace uploads same-name same-byte rework and refreshes milestones thro
     await settle();
     assert.equal(el("file-list").children.length, 1);
     assert.equal(el("zip-file").value, otherFile);
+    await submit("第二里程碑");
+    actor = f.buyer;
+    el("load").click();
+    await settle();
+    for (const milestone of milestones) {
+      el("file-milestone").value = milestone;
+      el("file-milestone").dispatchEvent(new Event("input"));
+      await settle();
+      el("zip-decision").value = "accepted";
+      el("zip-reason").value = "已核对文件";
+      el("zip-confirm").checked = true;
+      el("zip-review-form").dispatchEvent(new Event("submit"));
+      await settle();
+      assert.equal(el("file-milestone").value, milestone);
+    }
+    assert.equal(el("zip-complete").hidden, false);
+    el("zip-complete").click();
+    el("zip-complete").click();
+    await settle();
+    assert.ok(finishCompletion);
+    el("file-milestone").value = milestones[0]!;
+    el("file-milestone").dispatchEvent(new Event("input"));
+    await settle();
+    assert.match(el("status").textContent, /已生效/);
+    el("zip-complete").click();
+    assert.equal(completions, 1);
+    finishCompletion();
+    await settle();
+    assert.equal(el("file-milestone").value, milestones[0]);
+    assert.match(el("status").textContent, /已完成/);
+    assert.match(el("contract").children[0]!.textContent, /completed/);
+    assert.match(el("zip-review-status").textContent, /合同已完成/);
+    for (const id of [
+      "zip-complete",
+      "zip-form",
+      "file-upload",
+      "authorization"
+    ])
+      assert.equal(el(id).hidden, true, id);
+    el("zip-complete").click();
+    await settle();
+    assert.match(el("zip-review-status").textContent, /合同已完成/);
+    el("load").click();
+    assert.equal(el("zip-complete").hidden, true);
+    await settle();
+    assert.equal(el("zip-review-status").textContent, "");
+    assert.match(el("status").textContent, /已完成/);
     assert.deepEqual(errors, []);
   } finally {
     globalThis.fetch = originalFetch;
     globalThis.XMLHttpRequest = originalXHR;
     f.db.close();
+  }
+});
+
+test("ZIP completion response cannot refresh or report success on a different contract", async () => {
+  const elements = new Map(
+    [...renderZipReview().matchAll(/id="([^"]+)"/g)].map(m => [
+      m[1]!,
+      new Element()
+    ])
+  );
+  const el = (id: string) => elements.get(id)!;
+  const root = ({
+    getElementById: (id: string) => elements.get(id),
+    createElement: () => new Element()
+  } as unknown) as Document;
+  const original = globalThis.fetch;
+  let selected = "first";
+  let refreshes = 0;
+  let finish: () => void = () => {};
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    if (init?.method === "POST")
+      await new Promise<void>(resolve => {
+        finish = resolve;
+      });
+    const data =
+      url === "/api/auth/me"
+        ? { csrf: "synthetic" }
+        : url.startsWith("/api/files")
+        ? []
+        : {
+            id: selected,
+            status: "active",
+            version: 1,
+            revision: 1,
+            milestones: [{ id: "m", version: 1, status: "accepted" }],
+            zipDeliveries: [],
+            events: []
+          };
+    return { ok: true, json: async () => ({ ok: true, data }) } as Response;
+  }) as typeof fetch;
+  try {
+    const panel = mountZipReview(
+      root,
+      () => selected,
+      () => "m",
+      () => "buyer",
+      async () => {
+        refreshes++;
+      }
+    );
+    await panel.refresh();
+    assert.equal(el("zip-complete").hidden, false);
+    el("zip-complete").dispatchEvent(new Event("click"));
+    await settle();
+    selected = "second";
+    panel.clear();
+    assert.equal(el("zip-complete").hidden, true);
+    finish();
+    await settle();
+    assert.equal(refreshes, 0);
+    assert.equal(el("zip-review-status").textContent, "");
+    assert.equal(el("zip-complete").hidden, true);
+  } finally {
+    globalThis.fetch = original;
   }
 });
