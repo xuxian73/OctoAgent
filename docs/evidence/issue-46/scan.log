@@ -1,0 +1,15 @@
+
+> octoagent@0.1.0 scan:integration
+> npm run build && node --env-file-if-exists=.env dist/packages/security/src/scan-integration.js
+
+
+> octoagent@0.1.0 build
+> tsc
+
+.env not found. Continuing without it.
+{"scanner":"clamav-clamscan","executableAvailable":false,"signatureDatabase":"validated by actual scan below"}
+{"scanner":"clamav-clamscan","sample":"clean","expected":"clean","actual":"unavailable","verified":false}
+{"scanner":"clamav-clamscan","sample":"clean-zip","expected":"clean","actual":"unavailable","verified":false}
+{"scanner":"clamav-clamscan","sample":"eicar-zip","expected":"rejected","actual":"unavailable","verified":false}
+{"scanner":"clamav-clamscan","sample":"eicar","expected":"rejected","actual":"unavailable","verified":false}
+未验证：检查 ClamAV 可执行文件、病毒库、权限及超时配置

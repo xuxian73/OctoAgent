@@ -18,6 +18,10 @@ npm run dev
 
 `.env` 只由启动/迁移命令读取，已被 Git 和 Docker 忽略。`DATABASE_URL` 为本地 SQLite 文件地址；`HOST`/`PORT` 为监听地址；`APP_URL` 预留为后续绝对 URL 的来源；`NODE_ENV=production` 强制浏览器会话 Cookie 使用 Secure，生产入口必须通过 HTTPS。会话使用安全随机数，不需要共享 SESSION_SECRET。不要把真实凭据或个人数据加入测试、代码和日志。
 
+## ZIP MVP 独立验收
+
+使用 `npm run build` 后运行 `node scripts/zip-acceptance.mjs`，创建空库、独立字节存储、两版 ZIP 样本并自动分配端口，不预建账户。启动配置、正式网页步骤、扫描边界和本次阻塞记录见 [#46 验收](docs/issue-46-acceptance.md)。
+
 ## 技术栈与目录
 
 需求第 7 节的 Next.js / Prisma 是默认建议。本次执行环境不能访问 npm，缓存中也没有这两个依赖，因此选择可离线验证的 Node.js 原生 HTTP、浏览器 DOM、TypeScript **5.9.3** 和 Node 内置 SQLite（该 Node 版本会显示实验性提示）。暂不引入框架、ORM 或 MCP SDK，避免在基线中加入无法验证的依赖。格式工具使用缓存可用的 Prettier **1.19.1**；依赖精确版本及完整性散列记录在 `package-lock.json`，统一使用 `npm ci` 安装。

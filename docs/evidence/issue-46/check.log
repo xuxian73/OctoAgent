@@ -1,0 +1,1190 @@
+
+> octoagent@0.1.0 format:check
+> prettier --check '**/*.{ts,json,md,yml,html,css}'
+
+Checking formatting...
+All matched files use Prettier code style!
+
+> octoagent@0.1.0 typecheck
+> tsc --noEmit
+
+
+> octoagent@0.1.0 build
+> tsc
+
+
+> octoagent@0.1.0 db:check
+> node --test dist/tests/database.test.js
+
+TAP version 13
+# (node:71766) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: fresh migration matches schema, is repeatable and detects tampering
+ok 1 - fresh migration matches schema, is repeatable and detects tampering
+  ---
+  duration_ms: 17.868
+  type: 'test'
+  ...
+# Subtest: unsupported database providers fail without leaking connection data
+ok 2 - unsupported database providers fail without leaking connection data
+  ---
+  duration_ms: 0.098708
+  type: 'test'
+  ...
+# Subtest: main database upgrades preserve notifications and durable idempotent reads
+ok 3 - main database upgrades preserve notifications and durable idempotent reads
+  ---
+  duration_ms: 34.37175
+  type: 'test'
+  ...
+# Subtest: identity credentials and revocation survive closing and reopening the database
+ok 4 - identity credentials and revocation survive closing and reopening the database
+  ---
+  duration_ms: 25.979
+  type: 'test'
+  ...
+1..4
+# tests 4
+# suites 0
+# pass 4
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 178.276
+
+> octoagent@0.1.0 test
+> node --test dist/tests/*.test.js
+
+TAP version 13
+# (node:71789) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: authenticated Agent management page reaches its forms through the application router
+ok 1 - authenticated Agent management page reaches its forms through the application router
+  ---
+  duration_ms: 33.1875
+  type: 'test'
+  ...
+# Subtest: owner API creates agents, confirms bounded scopes, isolates credentials and revokes MCP immediately
+ok 2 - owner API creates agents, confirms bounded scopes, isolates credentials and revokes MCP immediately
+  ---
+  duration_ms: 83.0525
+  type: 'test'
+  ...
+# Subtest: page confirms exact scope and owner before issuing and clears the one-time result
+ok 3 - page confirms exact scope and owner before issuing and clears the one-time result
+  ---
+  duration_ms: 4.229959
+  type: 'test'
+  ...
+# Subtest: application escapes authorized context and preserves narrow-screen key actions
+ok 4 - application escapes authorized context and preserves narrow-screen key actions
+  ---
+  duration_ms: 1.022583
+  type: 'test'
+  ...
+# Subtest: shared client carries Cookie/CSRF and retires pending responses and confirmations on project change
+ok 5 - shared client carries Cookie/CSRF and retires pending responses and confirmations on project change
+  ---
+  duration_ms: 4.358083
+  type: 'test'
+  ...
+# (node:71791) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: role matrix, exact resource grants and current tenant membership are enforced
+ok 6 - role matrix, exact resource grants and current tenant membership are enforced
+  ---
+  duration_ms: 14.554584
+  type: 'test'
+  ...
+# Subtest: agent credentials are bounded, exact-scoped and never grant ambient sensitive access
+ok 7 - agent credentials are bounded, exact-scoped and never grant ambient sensitive access
+  ---
+  duration_ms: 8.963041
+  type: 'test'
+  ...
+# Subtest: expiry at boundary, durable revocation, responsibility and grant removal fail closed
+ok 8 - expiry at boundary, durable revocation, responsibility and grant removal fail closed
+  ---
+  duration_ms: 7.735333
+  type: 'test'
+  ...
+# Subtest: HTTP middleware returns uniform errors and never trusts duplicate or replayed identity headers
+ok 9 - HTTP middleware returns uniform errors and never trusts duplicate or replayed identity headers
+  ---
+  duration_ms: 11.810083
+  type: 'test'
+  ...
+# Subtest: stored credentials and audit records contain only token digests
+ok 10 - stored credentials and audit records contain only token digests
+  ---
+  duration_ms: 7.766791
+  type: 'test'
+  ...
+# Subtest: agent scope does not inherit owner grants, organization or project access
+ok 11 - agent scope does not inherit owner grants, organization or project access
+  ---
+  duration_ms: 10.266416
+  type: 'test'
+  ...
+# Subtest: offline process fixture verifies actual stdin, fixed options, exits, missing dependency and timeout
+ok 12 - offline process fixture verifies actual stdin, fixed options, exits, missing dependency and timeout
+  ---
+  duration_ms: 939.090209
+  type: 'test'
+  ...
+# Subtest: slow process leaves HTTP responsive, bounds concurrency and coalesces cached health probes
+ok 13 - slow process leaves HTTP responsive, bounds concurrency and coalesces cached health probes
+  ---
+  duration_ms: 1313.408334
+  type: 'test'
+  ...
+# (node:71793) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: selection is unique, snapshots scope, denies strangers and stale/unsubmitted bids
+ok 14 - selection is unique, snapshots scope, denies strangers and stale/unsubmitted bids
+  ---
+  duration_ms: 47.489
+  type: 'test'
+  ...
+# Subtest: selection preserves maximum-length source fields and all delivery evidence
+ok 15 - selection preserves maximum-length source fields and all delivery evidence
+  ---
+  duration_ms: 3099.12575
+  type: 'test'
+  ...
+# Subtest: both human parties confirm the same version concurrently; retries cannot duplicate transitions
+ok 16 - both human parties confirm the same version concurrently; retries cannot duplicate transitions
+  ---
+  duration_ms: 20.535292
+  type: 'test'
+  ...
+# Subtest: scope changes preserve history, invalidate old confirmations and freeze delivery until both reconfirm
+ok 17 - scope changes preserve history, invalidate old confirmations and freeze delivery until both reconfirm
+  ---
+  duration_ms: 99.241584
+  type: 'test'
+  ...
+# Subtest: milestone validation, rework and Agent draft are distinct from buyer acceptance and manual settlement
+ok 18 - milestone validation, rework and Agent draft are distinct from buyer acceptance and manual settlement
+  ---
+  duration_ms: 110.020708
+  type: 'test'
+  ...
+# Subtest: disputes freeze all subsequent commands and audit failures roll back state
+ok 19 - disputes freeze all subsequent commands and audit failures roll back state
+  ---
+  duration_ms: 24.846083
+  type: 'test'
+  ...
+# Subtest: HTTP selection, confirmation flag, stale writes and uniform authorization errors
+ok 20 - HTTP selection, confirmation flag, stale writes and uniform authorization errors
+  ---
+  duration_ms: 22.332417
+  type: 'test'
+  ...
+# (node:71793) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# (node:71793) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# (node:71793) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: independent SQLite workers serialize concurrent confirmations and duplicate requests
+ok 21 - independent SQLite workers serialize concurrent confirmations and duplicate requests
+  ---
+  duration_ms: 178.545208
+  type: 'test'
+  ...
+# Subtest: browser console loads versions and submits human confirmation through HTTP
+ok 22 - browser console loads versions and submits human confirmation through HTTP
+  ---
+  duration_ms: 26.802125
+  type: 'test'
+  ...
+# Subtest: all forbidden contract and milestone edges reject without changing audit history
+ok 23 - all forbidden contract and milestone edges reject without changing audit history
+  ---
+  duration_ms: 45.873667
+  type: 'test'
+  ...
+# Subtest: contract Agent scopes and revoked grants are checked on every read and retry
+ok 24 - contract Agent scopes and revoked grants are checked on every read and retry
+  ---
+  duration_ms: 11.514166
+  type: 'test'
+  ...
+# Subtest: party migration preserves legacy contracts, confirmations, workspace and effective grants
+ok 25 - party migration preserves legacy contracts, confirmations, workspace and effective grants
+  ---
+  duration_ms: 16.973791
+  type: 'test'
+  ...
+# (node:71794) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: fresh migration matches schema, is repeatable and detects tampering
+ok 26 - fresh migration matches schema, is repeatable and detects tampering
+  ---
+  duration_ms: 20.299416
+  type: 'test'
+  ...
+# Subtest: unsupported database providers fail without leaking connection data
+ok 27 - unsupported database providers fail without leaking connection data
+  ---
+  duration_ms: 0.151042
+  type: 'test'
+  ...
+# Subtest: main database upgrades preserve notifications and durable idempotent reads
+ok 28 - main database upgrades preserve notifications and durable idempotent reads
+  ---
+  duration_ms: 59.539459
+  type: 'test'
+  ...
+# Subtest: identity credentials and revocation survive closing and reopening the database
+ok 29 - identity credentials and revocation survive closing and reopening the database
+  ---
+  duration_ms: 39.955083
+  type: 'test'
+  ...
+# (node:71795) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: case grants require explicit human party consent and current membership; expiry and revocation fail closed
+ok 30 - case grants require explicit human party consent and current membership; expiry and revocation fail closed
+  ---
+  duration_ms: 28.4005
+  type: 'test'
+  ...
+# Subtest: case view isolates evidence references and sanitized audit, records every read and preserves frozen business state
+ok 31 - case view isolates evidence references and sanitized audit, records every read and preserves frozen business state
+  ---
+  duration_ms: 39.407
+  type: 'test'
+  ...
+# Subtest: HTTP case entry uses uniform denial, no-store and read-only HTML
+ok 32 - HTTP case entry uses uniform denial, no-store and read-only HTML
+  ---
+  duration_ms: 37.269375
+  type: 'test'
+  ...
+# (node:71799) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: offline pages + HTTP + MCP: publish, compare, contract, evidence, rework, accept and dispute freeze; seed is repeatable
+ok 33 - offline pages + HTTP + MCP: publish, compare, contract, evidence, rework, accept and dispute freeze; seed is repeatable
+  ---
+  duration_ms: 616.515542
+  type: 'test'
+  ...
+# {"action":"MCP get_task_context","request_id":"demo-1","result":"FORBIDDEN","audit":[{"sequence":12,"event":"MarketplaceMcp.call:get_task_context","result":"rejected"}]}
+# {"action":"MCP get_task_context","request_id":"demo-2","result":"FORBIDDEN","audit":[{"sequence":13,"event":"MarketplaceMcp.call:get_task_context","result":"rejected"}]}
+# {"action":"MCP publish_task","request_id":"demo-6","result":"human_confirmation_required","audit":[{"sequence":23,"event":"Requirements.inspect:publish_task","result":"success"},{"sequence":24,"event":"MarketplaceMcp.call:publish_task","result":"success"}]}
+# {"action":"MCP publish_task","request_id":"demo-6","result":"CONFIRMATION_EXPIRED","audit":[{"sequence":23,"event":"Requirements.inspect:publish_task","result":"success"},{"sequence":24,"event":"MarketplaceMcp.call:publish_task","result":"success"},{"sequence":27,"event":"Requirements.inspect:publish_task","result":"success"},{"sequence":28,"event":"MarketplaceMcp.call:publish_task","result":"rejected"}]}
+# {"action":"POST /api/requirements/bbf2e6c6-57ea-459a-a4cf-e7c1931a4da4/publish","request_id":"20b84e2a-70d5-4c2a-9275-ce54ff1ab03b","result":"FORBIDDEN","audit":[{"sequence":32,"event":"Requirements.publish","result":"rejected"}]}
+# {"action":"MCP draft_bid","request_id":"demo-10","result":"FORBIDDEN","audit":[{"sequence":37,"event":"MarketplaceMcp.call:draft_bid","result":"rejected"}]}
+# {"action":"MCP submit_bid","request_id":"demo-12","result":"human_confirmation_required","audit":[{"sequence":41,"event":"Market.inspectBid:submit_bid","result":"success"},{"sequence":42,"event":"MarketplaceMcp.call:submit_bid","result":"success"}]}
+# {"action":"POST /api/market/bids/d6e4e464-6666-43e1-b8c1-6ad3c6094eb0/submit","request_id":"c7f48fd7-c1c0-473c-af64-003149e4c1a7","result":"FORBIDDEN","audit":[{"sequence":44,"event":"Market.submit","result":"rejected"}]}
+# {"action":"MCP select_bid","request_id":"demo-14","result":"human_confirmation_required","audit":[{"sequence":52,"event":"Market.inspectBid:select_bid","result":"success"},{"sequence":53,"event":"MarketplaceMcp.call:select_bid","result":"success"}]}
+# {"action":"MCP get_contract","request_id":"demo-20","result":"FORBIDDEN","audit":[{"sequence":71,"event":"MarketplaceMcp.call:get_contract","result":"rejected"}]}
+# {"action":"GET /api/contracts/6fac7f75-7947-4903-8357-736fa0e86706","request_id":"6e47e2a7-d8c4-44d0-bc46-9d54fdaa364b","result":"FORBIDDEN","audit":[{"sequence":72,"event":"Contracts.read","result":"rejected"}]}
+# {"action":"POST /api/workspaces/6fac7f75-7947-4903-8357-736fa0e86706/commands","request_id":"bc56dcd5-f13d-4621-8868-ec8dba8be10c","result":"FORBIDDEN","audit":[{"sequence":73,"event":"Workspaces.command.create_workspace_branch","result":"rejected"}]}
+# {"action":"POST /api/workspaces/6fac7f75-7947-4903-8357-736fa0e86706/commands","request_id":"d5fb0fe8-c990-4ab3-8211-8cb42d78ea44","result":"FORBIDDEN","audit":[{"sequence":77,"event":"Workspaces.command.create_workspace_branch","result":"rejected"}]}
+# {"action":"MCP create_workspace_branch","request_id":"demo-24","result":"human_confirmation_required","audit":[{"sequence":78,"event":"Contracts.read:create_workspace_branch","result":"success"},{"sequence":79,"event":"Contracts.read:create_workspace_branch","result":"success"},{"sequence":80,"event":"Workspaces.inspect:create_workspace_branch","result":"success"},{"sequence":81,"event":"MarketplaceMcp.call:create_workspace_branch","result":"success"}]}
+# {"action":"POST /api/workspaces/6fac7f75-7947-4903-8357-736fa0e86706/commands","request_id":"7121fc87-370a-4d72-a7c1-c78709f87bc3","result":"FORBIDDEN","audit":[{"sequence":84,"event":"Workspaces.command.commit","result":"rejected"}]}
+# {"action":"MCP request_changes","request_id":"demo-38","result":"human_confirmation_required","audit":[{"sequence":111,"event":"Contracts.inspect:request_changes","result":"success"},{"sequence":112,"event":"Contracts.inspect:request_changes","result":"success"},{"sequence":113,"event":"Contracts.inspect:request_changes","result":"success"},{"sequence":114,"event":"MarketplaceMcp.call:request_changes","result":"success"}]}
+# {"action":"POST /api/contracts/6fac7f75-7947-4903-8357-736fa0e86706/commands","request_id":"d8f0440d-4e4b-4201-a9ca-d4939e8b3d25","result":"FORBIDDEN","audit":[{"sequence":116,"event":"Contracts.command.milestone","result":"rejected"}]}
+# {"action":"MCP accept_milestone","request_id":"demo-44","result":"human_confirmation_required","audit":[{"sequence":128,"event":"Contracts.inspect:accept_milestone","result":"success"},{"sequence":129,"event":"Contracts.inspect:accept_milestone","result":"success"},{"sequence":130,"event":"Contracts.inspect:accept_milestone","result":"success"},{"sequence":131,"event":"MarketplaceMcp.call:accept_milestone","result":"success"}]}
+# {"action":"POST /api/contracts/6fac7f75-7947-4903-8357-736fa0e86706/commands","request_id":"c74910f8-34f3-412d-9995-f4595896cd73","result":"FORBIDDEN","audit":[{"sequence":135,"event":"Contracts.command.milestone","result":"rejected"}]}
+# {"action":"MCP publish_task","request_id":"demo-52","result":"human_confirmation_required","audit":[{"sequence":157,"event":"Requirements.inspect:publish_task","result":"success"},{"sequence":158,"event":"MarketplaceMcp.call:publish_task","result":"success"}]}
+# {"action":"POST /api/requirements/ffcd4fd6-9baa-4af1-badd-50b0ef422b73/publish","request_id":"6d019877-870b-460c-8c68-30d932b13364","result":"FORBIDDEN","audit":[{"sequence":161,"event":"Requirements.publish","result":"rejected"}]}
+# {"action":"MCP draft_bid","request_id":"demo-55","result":"FORBIDDEN","audit":[{"sequence":166,"event":"MarketplaceMcp.call:draft_bid","result":"rejected"}]}
+# {"action":"MCP submit_bid","request_id":"demo-57","result":"human_confirmation_required","audit":[{"sequence":170,"event":"Market.inspectBid:submit_bid","result":"success"},{"sequence":171,"event":"MarketplaceMcp.call:submit_bid","result":"success"}]}
+# {"action":"POST /api/market/bids/ce2c5b40-4d67-4284-847c-4dde8e7af7b7/submit","request_id":"b09af148-f56c-4a00-a719-26f2948b5ba7","result":"FORBIDDEN","audit":[{"sequence":173,"event":"Market.submit","result":"rejected"}]}
+# {"action":"MCP select_bid","request_id":"demo-59","result":"human_confirmation_required","audit":[{"sequence":181,"event":"Market.inspectBid:select_bid","result":"success"},{"sequence":182,"event":"MarketplaceMcp.call:select_bid","result":"success"}]}
+# {"action":"MCP get_contract","request_id":"demo-65","result":"FORBIDDEN","audit":[{"sequence":200,"event":"MarketplaceMcp.call:get_contract","result":"rejected"}]}
+# {"action":"GET /api/contracts/a7f5a963-9706-4d11-b09b-200ffa44d3c3","request_id":"cd116377-e435-47c4-8fb5-777bac7a9ce2","result":"FORBIDDEN","audit":[{"sequence":201,"event":"Contracts.read","result":"rejected"}]}
+# {"action":"POST /api/workspaces/a7f5a963-9706-4d11-b09b-200ffa44d3c3/commands","request_id":"6c77fc92-8be2-4b77-99cf-e5f317a7789e","result":"FORBIDDEN","audit":[{"sequence":202,"event":"Workspaces.command.create_workspace_branch","result":"rejected"}]}
+# {"action":"POST /api/workspaces/a7f5a963-9706-4d11-b09b-200ffa44d3c3/commands","request_id":"a1e2b09c-ea09-480e-8c7c-517a865edd76","result":"FORBIDDEN","audit":[{"sequence":206,"event":"Workspaces.command.create_workspace_branch","result":"rejected"}]}
+# {"action":"MCP create_workspace_branch","request_id":"demo-69","result":"human_confirmation_required","audit":[{"sequence":207,"event":"Contracts.read:create_workspace_branch","result":"success"},{"sequence":208,"event":"Contracts.read:create_workspace_branch","result":"success"},{"sequence":209,"event":"Workspaces.inspect:create_workspace_branch","result":"success"},{"sequence":210,"event":"MarketplaceMcp.call:create_workspace_branch","result":"success"}]}
+# {"action":"POST /api/workspaces/a7f5a963-9706-4d11-b09b-200ffa44d3c3/commands","request_id":"3df459e6-eef7-40a9-882e-372cd1f9cb35","result":"FORBIDDEN","audit":[{"sequence":213,"event":"Workspaces.command.commit","result":"rejected"}]}
+# {"action":"MCP open_dispute","request_id":"demo-83","result":"human_confirmation_required","audit":[{"sequence":240,"event":"Contracts.inspect:open_dispute","result":"success"},{"sequence":241,"event":"MarketplaceMcp.call:open_dispute","result":"success"}]}
+# {"action":"POST /api/contracts/a7f5a963-9706-4d11-b09b-200ffa44d3c3/commands","request_id":"12ca1cb4-710f-4ada-82a7-082cf7e56fa6","result":"DISPUTE_FROZEN","audit":[{"sequence":249,"event":"Contracts.command.milestone","result":"rejected"}]}
+# Subtest: failed seed rolls back and retries; refuses a non-demo database
+ok 34 - failed seed rolls back and retries; refuses a non-demo database
+  ---
+  duration_ms: 694.749916
+  type: 'test'
+  ...
+# Subtest: workspace page loads seeded API evidence and clears it on tenant switch
+ok 35 - workspace page loads seeded API evidence and clears it on tenant switch
+  ---
+  duration_ms: 428.739958
+  type: 'test'
+  ...
+# (node:71807) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: real temporary file bytes survive reopen; scanner required; exact digest and immutable object
+ok 36 - real temporary file bytes survive reopen; scanner required; exact digest and immutable object
+  ---
+  duration_ms: 89.71125
+  type: 'test'
+  ...
+# Subtest: reject traversal, symlink paths, types, forgery, size/count, stale versions and reused keys; rollback registration failure
+ok 37 - reject traversal, symlink paths, types, forgery, size/count, stale versions and reused keys; rollback registration failure
+  ---
+  duration_ms: 10.063084
+  type: 'test'
+  ...
+# Subtest: HTTP concurrent retries, raw download headers and per-request revoked authorization
+ok 38 - HTTP concurrent retries, raw download headers and per-request revoked authorization
+  ---
+  duration_ms: 20.3055
+  type: 'test'
+  ...
+# Subtest: shared SHA submissions isolate milestone artifacts and enforce binding and scan gates
+ok 39 - shared SHA submissions isolate milestone artifacts and enforce binding and scan gates
+  ---
+  duration_ms: 95.124625
+  type: 'test'
+  ...
+# Subtest: interrupted request never registers partial bytes; legacy metadata stays non-downloadable
+ok 40 - interrupted request never registers partial bytes; legacy metadata stays non-downloadable
+  ---
+  duration_ms: 28.984791
+  type: 'test'
+  ...
+# Subtest: scan lease, stale attempts, checksum mismatch, unavailable retry and simulated blocking
+ok 41 - scan lease, stale attempts, checksum mismatch, unavailable retry and simulated blocking
+  ---
+  duration_ms: 16.49775
+  type: 'test'
+  ...
+# Subtest: independent database connections cannot steal an active scan lease
+ok 42 - independent database connections cannot steal an active scan lease
+  ---
+  duration_ms: 66.594958
+  type: 'test'
+  ...
+# Subtest: scan audit preserves retries, discarded attempts and atomically rolls back failures
+ok 43 - scan audit preserves retries, discarded attempts and atomically rolls back failures
+  ---
+  duration_ms: 21.859291
+  type: 'test'
+  ...
+# (node:71808) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: REST stub: real local objects → remote branch/commit → PR/checks, immutable SHA mapping and safe projections
+ok 44 - REST stub: real local objects → remote branch/commit → PR/checks, immutable SHA mapping and safe projections
+  ---
+  duration_ms: 2439.223959
+  type: 'test'
+  ...
+# Subtest: default read, independent scope ceilings, party/grants, expiry, revocation and disabled merge/deploy
+ok 45 - default read, independent scope ceilings, party/grants, expiry, revocation and disabled merge/deploy
+  ---
+  duration_ms: 1656.597375
+  type: 'test'
+  ...
+# Subtest: remote identity/errors reject evidence; lost replies/restarts/concurrent retries create only one PR
+ok 46 - remote identity/errors reject evidence; lost replies/restarts/concurrent retries create only one PR
+  ---
+  duration_ms: 2935.949375
+  type: 'test'
+  ...
+# Subtest: durable plan resumes after database failure, lease expiry and reconnection; stale local evidence is rejected
+ok 47 - durable plan resumes after database failure, lease expiry and reconnection; stale local evidence is rejected
+  ---
+  duration_ms: 1849.419583
+  type: 'test'
+  ...
+# Subtest: browser entry confirms read-only by default, offers independent PR actions and renders real links
+ok 48 - browser entry confirms read-only by default, offers independent PR actions and renders real links
+  ---
+  duration_ms: 3277.228417
+  type: 'test'
+  ...
+# Subtest: private deployment profiles reject unsafe permissions, credential references and unsupported scopes
+ok 49 - private deployment profiles reject unsafe permissions, credential references and unsupported scopes
+  ---
+  duration_ms: 488.019792
+  type: 'test'
+  ...
+# Subtest: one-time connection plans reject replay, stale scopes/configuration and expiry
+ok 50 - one-time connection plans reject replay, stale scopes/configuration and expiry
+  ---
+  duration_ms: 504.498583
+  type: 'test'
+  ...
+# Subtest: full snapshots reject remote deletions before any writes, including retries and changed baseline
+ok 51 - full snapshots reject remote deletions before any writes, including retries and changed baseline
+  ---
+  duration_ms: 1412.860666
+  type: 'test'
+  ...
+# (node:71809) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: real file -> branch -> Git commit -> diff -> fresh process verifies exact bytes and SHA
+ok 52 - real file -> branch -> Git commit -> diff -> fresh process verifies exact bytes and SHA
+  ---
+  duration_ms: 3187.505208
+  type: 'test'
+  ...
+# Subtest: large replacement diffs remain bounded across reopen, download and further imports
+ok 53 - large replacement diffs remain bounded across reopen, download and further imports
+  ---
+  duration_ms: 6485.032875
+  type: 'test'
+  ...
+# Subtest: failed database publication leaves immutable old generation; retry and concurrent connections publish once
+ok 54 - failed database publication leaves immutable old generation; retry and concurrent connections publish once
+  ---
+  duration_ms: 1539.856667
+  type: 'test'
+  ...
+# Subtest: authorization, freeze, scan, source binding and malicious inputs preserve repository state
+ok 55 - authorization, freeze, scan, source binding and malicious inputs preserve repository state
+  ---
+  duration_ms: 1567.125625
+  type: 'test'
+  ...
+# Subtest: missing deployment configuration/Git and hostile host configuration never fake success
+ok 56 - missing deployment configuration/Git and hostile host configuration never fake success
+  ---
+  duration_ms: 893.805917
+  type: 'test'
+  ...
+# Subtest: process death before publication rolls back; competing processes replay a single committed operation
+ok 57 - process death before publication rolls back; competing processes replay a single committed operation
+  ---
+  duration_ms: 1797.93125
+  type: 'test'
+  ...
+# Subtest: web selects contract and scanned source, initializes, branches, imports and displays real diff without IDs
+ok 58 - web selects contract and scanned source, initializes, branches, imports and displays real diff without IDs
+  ---
+  duration_ms: 1527.918459
+  type: 'test'
+  ...
+# Subtest: even parties to two contracts cannot import across their isolated repositories
+ok 59 - even parties to two contracts cannot import across their isolated repositories
+  ---
+  duration_ms: 665.16125
+  type: 'test'
+  ...
+# (node:71811) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# (node:71811) ExperimentalWarning: The MockTimers API is an experimental feature and might change at any time
+# Subtest: unfinished login bodies do not reserve verification slots and have a total deadline
+ok 60 - unfinished login bodies do not reserve verification slots and have a total deadline
+  ---
+  duration_ms: 315.638167
+  type: 'test'
+  ...
+# Subtest: aborted and oversized login bodies never reach password verification
+ok 61 - aborted and oversized login bodies never reach password verification
+  ---
+  duration_ms: 232.170208
+  type: 'test'
+  ...
+# Subtest: password verification remains bounded and releases slots on errors
+ok 62 - password verification remains bounded and releases slots on errors
+  ---
+  duration_ms: 201.752833
+  type: 'test'
+  ...
+# Subtest: local password login, Cookie business access, CSRF, logout and safe persistence
+ok 63 - local password login, Cookie business access, CSRF, logout and safe persistence
+  ---
+  duration_ms: 198.634125
+  type: 'test'
+  ...
+# Subtest: identical credential errors, bounded login rate and recovery
+ok 64 - identical credential errors, bounded login rate and recovery
+  ---
+  duration_ms: 760.456416
+  type: 'test'
+  ...
+# Subtest: expiry, revocation, Secure cookies and ambiguous authentication
+ok 65 - expiry, revocation, Secure cookies and ambiguous authentication
+  ---
+  duration_ms: 296.481416
+  type: 'test'
+  ...
+# Subtest: offline provisioning salts each password and rolls back duplicate accounts
+ok 66 - offline provisioning salts each password and rolls back duplicate accounts
+  ---
+  duration_ms: 334.939667
+  type: 'test'
+  ...
+# Subtest: offline command reads passwords from stdin and grants no business permissions
+ok 67 - offline command reads passwords from stdin and grants no business permissions
+  ---
+  duration_ms: 1033.597041
+  type: 'test'
+  ...
+# Subtest: empty database registration, first login, onboarding and logout grant no authority
+ok 68 - empty database registration, first login, onboarding and logout grant no authority
+  ---
+  duration_ms: 219.975792
+  type: 'test'
+  ...
+# Subtest: concurrent duplicate registrations roll back identities and grant no existing resources
+ok 69 - concurrent duplicate registrations roll back identities and grant no existing resources
+  ---
+  duration_ms: 403.873583
+  type: 'test'
+  ...
+# Subtest: registration rejects malformed input, authority fields and cross-origin submissions
+ok 70 - registration rejects malformed input, authority fields and cross-origin submissions
+  ---
+  duration_ms: 5.258166
+  type: 'test'
+  ...
+# Subtest: registration shares password concurrency and rate budgets with login and recovers after errors
+ok 71 - registration shares password concurrency and rate budgets with login and recovers after errors
+  ---
+  duration_ms: 90.049
+  type: 'test'
+  ...
+# Subtest: registration bounds body size and total read time before hashing
+ok 72 - registration bounds body size and total read time before hashing
+  ---
+  duration_ms: 4.360458
+  type: 'test'
+  ...
+# Subtest: independent registered buyer and seller enter their own paths and retain profiles after logout
+ok 73 - independent registered buyer and seller enter their own paths and retain profiles after logout
+  ---
+  duration_ms: 399.756375
+  type: 'test'
+  ...
+# (node:71830) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: recipient notifications paginate, persist reads and recheck revoked access
+ok 74 - recipient notifications paginate, persist reads and recheck revoked access
+  ---
+  duration_ms: 36.238541
+  type: 'test'
+  ...
+# Subtest: notification pagination skips revoked projects without exposing hidden cursors
+ok 75 - notification pagination skips revoked projects without exposing hidden cursors
+  ---
+  duration_ms: 42.783583
+  type: 'test'
+  ...
+# Subtest: discovery filters only published, authorized and open snapshots; private context stays hidden
+ok 76 - discovery filters only published, authorized and open snapshots; private context stays hidden
+  ---
+  duration_ms: 37.449
+  type: 'test'
+  ...
+# Subtest: agent drafts require the responsible human; submission retries are atomic and versions remain traceable
+ok 77 - agent drafts require the responsible human; submission retries are atomic and versions remain traceable
+  ---
+  duration_ms: 14.171792
+  type: 'test'
+  ...
+# Subtest: confirmation expires and published requirement changes require a new bid version
+ok 78 - confirmation expires and published requirement changes require a new bid version
+  ---
+  duration_ms: 16.458458
+  type: 'test'
+  ...
+# Subtest: published scope changes exclude old bids until a new version is confirmed
+ok 79 - published scope changes exclude old bids until a new version is confirmed
+  ---
+  duration_ms: 44.162208
+  type: 'test'
+  ...
+# Subtest: comparison supports two bidders and never defaults to cheapest; cross-bid reads deny uniformly
+ok 80 - comparison supports two bidders and never defaults to cheapest; cross-bid reads deny uniformly
+  ---
+  duration_ms: 15.185625
+  type: 'test'
+  ...
+# Subtest: clarifications enforce participants and audience, with stable timeline order and immutable scope
+ok 81 - clarifications enforce participants and audience, with stable timeline order and immutable scope
+  ---
+  duration_ms: 17.961333
+  type: 'test'
+  ...
+# Subtest: offline HTTP covers discovery, confirmation, comparison and clarification with uniform errors
+ok 82 - offline HTTP covers discovery, confirmation, comparison and clarification with uniform errors
+  ---
+  duration_ms: 22.161333
+  type: 'test'
+  ...
+# Subtest: comparison renders separate columns, evidence and permission rows as text
+ok 83 - comparison renders separate columns, evidence and permission rows as text
+  ---
+  duration_ms: 0.892292
+  type: 'test'
+  ...
+# Subtest: market browser controls submit a confirmed bid and render two comparison columns through HTTP
+ok 84 - market browser controls submit a confirmed bid and render two comparison columns through HTTP
+  ---
+  duration_ms: 43.401
+  type: 'test'
+  ...
+# Subtest: bid audit identifies generated and changed bids independently of the project scope
+ok 85 - bid audit identifies generated and changed bids independently of the project scope
+  ---
+  duration_ms: 10.03675
+  type: 'test'
+  ...
+# Subtest: buyer replies bind to private seller clarifications, with HTTP retries and authorization
+ok 86 - buyer replies bind to private seller clarifications, with HTTP retries and authorization
+  ---
+  duration_ms: 23.101708
+  type: 'test'
+  ...
+# (node:71872) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: SDK client discovers every tool, JSON schemas, resource template and prompt
+ok 87 - SDK client discovers every tool, JSON schemas, resource template and prompt
+  ---
+  duration_ms: 1233.152458
+  type: 'test'
+  ...
+# Subtest: irreversible tools return bounded expiring human handoffs without changing business state
+ok 88 - irreversible tools return bounded expiring human handoffs without changing business state
+  ---
+  duration_ms: 163.011709
+  type: 'test'
+  ...
+# Subtest: authorization is rechecked for replays, revoked and expired scopes; resources hide existence
+ok 89 - authorization is rechecked for replays, revoked and expired scopes; resources hide existence
+  ---
+  duration_ms: 41.780958
+  type: 'test'
+  ...
+# Subtest: search replay rejects cached tasks after Agent access is disabled
+ok 90 - search replay rejects cached tasks after Agent access is disabled
+  ---
+  duration_ms: 54.138
+  type: 'test'
+  ...
+# Subtest: search_tasks replay applies current public fields after republication
+ok 91 - search_tasks replay applies current public fields after republication
+  ---
+  duration_ms: 42.922458
+  type: 'test'
+  ...
+# Subtest: get_task_context replay applies current public fields after republication
+ok 92 - get_task_context replay applies current public fields after republication
+  ---
+  duration_ms: 39.950625
+  type: 'test'
+  ...
+# Subtest: drafts and clarifications are atomic, persistently idempotent and reject changed requests
+ok 93 - drafts and clarifications are atomic, persistently idempotent and reject changed requests
+  ---
+  duration_ms: 46.790166
+  type: 'test'
+  ...
+# Subtest: stale confirmation and revoked workspace permission cannot be replayed
+ok 94 - stale confirmation and revoked workspace permission cannot be replayed
+  ---
+  duration_ms: 41.880167
+  type: 'test'
+  ...
+# Subtest: tool-specific output schemas require and type business results
+ok 95 - tool-specific output schemas require and type business results
+  ---
+  duration_ms: 59.209625
+  type: 'test'
+  ...
+# Subtest: capability and permission search filters use published authorized tasks
+ok 96 - capability and permission search filters use published authorized tasks
+  ---
+  duration_ms: 37.170333
+  type: 'test'
+  ...
+# Subtest: reputation aggregates verifiable authorized seller history and rechecks isolation
+ok 97 - reputation aggregates verifiable authorized seller history and rechecks isolation
+  ---
+  duration_ms: 177.615
+  type: 'test'
+  ...
+# Subtest: seller MCP context closes the clarification loop without changing contract scope or grants
+ok 98 - seller MCP context closes the clarification loop without changing contract scope or grants
+  ---
+  duration_ms: 74.030917
+  type: 'test'
+  ...
+# Subtest: signed-in notification panel loads versions, authorized links, pages and persisted read state
+ok 99 - signed-in notification panel loads versions, authorized links, pages and persisted read state
+  ---
+  duration_ms: 5.200542
+  type: 'test'
+  ...
+# (node:71973) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: contract-only grants expose the project and actual business pages without project read
+ok 100 - contract-only grants expose the project and actual business pages without project read
+  ---
+  duration_ms: 47.870584
+  type: 'test'
+  ...
+# Subtest: new human account reaches onboarding, creates a project and can save a draft without seeds
+ok 101 - new human account reaches onboarding, creates a project and can save a draft without seeds
+  ---
+  duration_ms: 16.101917
+  type: 'test'
+  ...
+# Subtest: initialization rejects anonymous, agents, forged identity fields, invalid names and missing CSRF/key
+ok 102 - initialization rejects anonymous, agents, forged identity fields, invalid names and missing CSRF/key
+  ---
+  duration_ms: 6.978584
+  type: 'test'
+  ...
+# Subtest: contexts are tenant isolated and membership or grant removal takes effect on lists and replay
+ok 103 - contexts are tenant isolated and membership or grant removal takes effect on lists and replay
+  ---
+  duration_ms: 33.783417
+  type: 'test'
+  ...
+# Subtest: failure of any creation audit atomically rolls back resources, membership, grants and idempotency
+ok 104 - failure of any creation audit atomically rolls back resources, membership, grants and idempotency
+  ---
+  duration_ms: 33.770041
+  type: 'test'
+  ...
+# Subtest: onboarding UI retries with the same key and populates only authorized context options
+ok 105 - onboarding UI retries with the same key and populates only authorized context options
+  ---
+  duration_ms: 4.945333
+  type: 'test'
+  ...
+# Subtest: first-use idempotency and eligibility survive database reopen across connections
+ok 106 - first-use idempotency and eligibility survive database reopen across connections
+  ---
+  duration_ms: 135.761083
+  type: 'test'
+  ...
+# Subtest: real shell follows authorized projects and pages; forged context and revoked access reveal no editor
+ok 107 - real shell follows authorized projects and pages; forged context and revoked access reveal no editor
+  ---
+  duration_ms: 20.235708
+  type: 'test'
+  ...
+# Subtest: seller onboarding is isolated, retryable, editable and preserves buyer authorization
+ok 108 - seller onboarding is isolated, retryable, editable and preserves buyer authorization
+  ---
+  duration_ms: 21.648
+  type: 'test'
+  ...
+# Subtest: seller audit failure rolls back every resource and allows retry
+ok 109 - seller audit failure rolls back every resource and allows retry
+  ---
+  duration_ms: 29.146834
+  type: 'test'
+  ...
+# Subtest: seller form retries creation with the same key and saves edits without a project
+ok 110 - seller form retries creation with the same key and saves edits without a project
+  ---
+  duration_ms: 3.120667
+  type: 'test'
+  ...
+# Subtest: Chinese seller field maxima fit the bounded JSON request and oversized bodies fail clearly
+ok 111 - Chinese seller field maxima fit the bounded JSON request and oversized bodies fail clearly
+  ---
+  duration_ms: 30.597209
+  type: 'test'
+  ...
+# Subtest: orders open the displayed contract and current milestones without typing identifiers
+ok 112 - orders open the displayed contract and current milestones without typing identifiers
+  ---
+  duration_ms: 8.450042
+  type: 'test'
+  ...
+# Subtest: comparison selection sends the displayed bid and requires explicit confirmation
+ok 113 - comparison selection sends the displayed bid and requires explicit confirmation
+  ---
+  duration_ms: 5.732792
+  type: 'test'
+  ...
+# (node:71995) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: independent registered sellers discover only publications, clarify, confirm bids and receive version notifications without project grants
+ok 114 - independent registered sellers discover only publications, clarify, confirm bids and receive version notifications without project grants
+  ---
+  duration_ms: 883.8995
+  type: 'test'
+  ...
+# Subtest: task scopes, responsible principals, visibility and participation revocation are rechecked on ordinary requests and replay
+ok 115 - task scopes, responsible principals, visibility and participation revocation are rechecked on ordinary requests and replay
+  ---
+  duration_ms: 748.145208
+  type: 'test'
+  ...
+# Subtest: closed bidding preserves buyer MCP management and participant clarification access
+ok 116 - closed bidding preserves buyer MCP management and participant clarification access
+  ---
+  duration_ms: 501.473667
+  type: 'test'
+  ...
+# Subtest: dual-role seller with an owned project searches other organizations from the public market
+ok 117 - dual-role seller with an owned project searches other organizations from the public market
+  ---
+  duration_ms: 482.650583
+  type: 'test'
+  ...
+# Subtest: cross-organization orders, contract roles and explicit expiring delivery delegation
+ok 118 - cross-organization orders, contract roles and explicit expiring delivery delegation
+  ---
+  duration_ms: 492.007917
+  type: 'test'
+  ...
+# Subtest: one principal can be seller and buyer on different contracts without joining the other project
+ok 119 - one principal can be seller and buyer on different contracts without joining the other project
+  ---
+  duration_ms: 469.622708
+  type: 'test'
+  ...
+# Subtest: fresh registered organizations complete two byte-verified ZIP deliveries through business authorization without Git
+ok 120 - fresh registered organizations complete two byte-verified ZIP deliveries through business authorization without Git
+  ---
+  duration_ms: 499.613917
+  type: 'test'
+  ...
+# Subtest: registration form supports keyboard submit, safe errors, retry and login focus
+ok 121 - registration form supports keyboard submit, safe errors, retry and login focus
+  ---
+  duration_ms: 43.461458
+  type: 'test'
+  ...
+# Subtest: browser and server username rules agree on full strings including punctuation
+ok 122 - browser and server username rules agree on full strings including punctuation
+  ---
+  duration_ms: 0.532916
+  type: 'test'
+  ...
+# (node:72036) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: partial drafts persist, missing fields are explicit; every task and budget type round trips
+ok 123 - partial drafts persist, missing fields are explicit; every task and budget type round trips
+  ---
+  duration_ms: 37.508209
+  type: 'test'
+  ...
+# Subtest: publication requires human confirmation bound to current revision, actor and expiry; replay cannot increment version
+ok 124 - publication requires human confirmation bound to current revision, actor and expiry; replay cannot increment version
+  ---
+  duration_ms: 15.301208
+  type: 'test'
+  ...
+# Subtest: independent connections reject stale edits; versions, change keys and bidder events commit atomically and persist
+ok 125 - independent connections reject stale edits; versions, change keys and bidder events commit atomically and persist
+  ---
+  duration_ms: 186.262916
+  type: 'test'
+  ...
+# Subtest: drafts and private metadata require buyer project grants, even for same-org sellers and platform admins
+ok 126 - drafts and private metadata require buyer project grants, even for same-org sellers and platform admins
+  ---
+  duration_ms: 37.377875
+  type: 'test'
+  ...
+# Subtest: attachment validation is server-side and new public metadata waits for a fresh publication
+ok 127 - attachment validation is server-side and new public metadata waits for a fresh publication
+  ---
+  duration_ms: 26.275334
+  type: 'test'
+  ...
+# Subtest: offline HTTP lifecycle validates bodies, returns generic errors and never echoes rejected input
+ok 128 - offline HTTP lifecycle validates bodies, returns generic errors and never echoes rejected input
+  ---
+  duration_ms: 37.977917
+  type: 'test'
+  ...
+# Subtest: editor exposes all structured fields, private defaults, summary confirmation and reload controls
+ok 129 - editor exposes all structured fields, private defaults, summary confirmation and reload controls
+  ---
+  duration_ms: 0.420125
+  type: 'test'
+  ...
+# Subtest: editor saves, reloads and publishes through HTTP; editing invalidates visible confirmation
+ok 130 - editor saves, reloads and publishes through HTTP; editing invalidates visible confirmation
+  ---
+  duration_ms: 62.998292
+  type: 'test'
+  ...
+# (node:72061) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: audit is append-only, correlated, excludes arbitrary private text and fails atomically
+ok 131 - audit is append-only, correlated, excludes arbitrary private text and fails atomically
+  ---
+  duration_ms: 10.516334
+  type: 'test'
+  ...
+# Subtest: idempotent creation survives replay, isolates actors, and rechecks role and revocation
+ok 132 - idempotent creation survives replay, isolates actors, and rechecks role and revocation
+  ---
+  duration_ms: 5.970333
+  type: 'test'
+  ...
+# Subtest: callback signature binds source, body, timestamp and nonce and rejects replay
+ok 133 - callback signature binds source, body, timestamp and nonce and rejects replay
+  ---
+  duration_ms: 6.401875
+  type: 'test'
+  ...
+# Subtest: file policy rejects dangerous bytes, size, scanner infection and scanner failure
+ok 134 - file policy rejects dangerous bytes, size, scanner infection and scanner failure
+  ---
+  duration_ms: 8.56825
+  type: 'test'
+  ...
+# Subtest: untrusted task instructions never grant a scope or publish without a human
+ok 135 - untrusted task instructions never grant a scope or publish without a human
+  ---
+  duration_ms: 14.2375
+  type: 'test'
+  ...
+# Subtest: HTTP retries correlate audit and never echo sensitive exception content
+ok 136 - HTTP retries correlate audit and never echo sensitive exception content
+  ---
+  duration_ms: 12.486917
+  type: 'test'
+  ...
+# Subtest: audit objects distinguish resources from scopes, including attachment replay and credentials
+ok 137 - audit objects distinguish resources from scopes, including attachment replay and credentials
+  ---
+  duration_ms: 15.132292
+  type: 'test'
+  ...
+# Subtest: health route uses the shared response and request ID contract
+ok 138 - health route uses the shared response and request ID contract
+  ---
+  duration_ms: 3.866083
+  type: 'test'
+  ...
+# Subtest: unknown paths and unsupported methods return generic JSON errors
+ok 139 - unknown paths and unsupported methods return generic JSON errors
+  ---
+  duration_ms: 2.502542
+  type: 'test'
+  ...
+# Subtest: frontend entry and compiled browser module are served
+ok 140 - frontend entry and compiled browser module are served
+  ---
+  duration_ms: 0.508958
+  type: 'test'
+  ...
+# Subtest: internal errors contain only a stable public message
+ok 141 - internal errors contain only a stable public message
+  ---
+  duration_ms: 1.751458
+  type: 'test'
+  ...
+# Subtest: console is anonymous and preview contains only synthetic context
+ok 142 - console is anonymous and preview contains only synthetic context
+  ---
+  duration_ms: 1.96875
+  type: 'test'
+  ...
+# Subtest: styles are served and contract API requires authorization
+ok 143 - styles are served and contract API requires authorization
+  ---
+  duration_ms: 1.23775
+  type: 'test'
+  ...
+# Subtest: requirement editor and its browser dependency are explicitly served
+ok 144 - requirement editor and its browser dependency are explicitly served
+  ---
+  duration_ms: 0.342
+  type: 'test'
+  ...
+# Subtest: contract console and browser module are explicitly served
+ok 145 - contract console and browser module are explicitly served
+  ---
+  duration_ms: 0.129375
+  type: 'test'
+  ...
+# Subtest: expired session clears current document before redirect and never returns credentials
+ok 146 - expired session clears current document before redirect and never returns credentials
+  ---
+  duration_ms: 43.598417
+  type: 'test'
+  ...
+# Subtest: shell renders landmarks, keyboard links and every authorized entry
+ok 147 - shell renders landmarks, keyboard links and every authorized entry
+  ---
+  duration_ms: 2.863583
+  type: 'test'
+  ...
+# Subtest: session and organization gate navigation and content before rendering
+ok 148 - session and organization gate navigation and content before rendering
+  ---
+  duration_ms: 0.762125
+  type: 'test'
+  ...
+# Subtest: status views use fixed Chinese copy without resource identifiers or details
+ok 149 - status views use fixed Chinese copy without resource identifiers or details
+  ---
+  duration_ms: 1.21025
+  type: 'test'
+  ...
+# Subtest: organization and all four action fields are escaped
+ok 150 - organization and all four action fields are escaped
+  ---
+  duration_ms: 0.550458
+  type: 'test'
+  ...
+# Subtest: native submit validates, focuses the invalid field and never saves; retry reloads
+ok 151 - native submit validates, focuses the invalid field and never saves; retry reloads
+  ---
+  duration_ms: 0.770167
+  type: 'test'
+  ...
+# Subtest: responsive styles preserve key actions and visible keyboard focus
+ok 152 - responsive styles preserve key actions and visible keyboard focus
+  ---
+  duration_ms: 0.328458
+  type: 'test'
+  ...
+# (node:72096) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: offline delivery lifecycle, evidence, idempotency, failure and checksum validation
+ok 153 - offline delivery lifecycle, evidence, idempotency, failure and checksum validation
+  ---
+  duration_ms: 56.648334
+  type: 'test'
+  ...
+# Subtest: read only, independent grants, revocation, expiry, path traversal and tenant boundaries
+ok 154 - read only, independent grants, revocation, expiry, path traversal and tenant boundaries
+  ---
+  duration_ms: 42.151834
+  type: 'test'
+  ...
+# Subtest: dangerous actions only return expiring confirmation and audit failures roll back
+ok 155 - dangerous actions only return expiring confirmation and audit failures roll back
+  ---
+  duration_ms: 17.610917
+  type: 'test'
+  ...
+# Subtest: workspace HTTP returns evidence and uniform forbidden errors
+ok 156 - workspace HTTP returns evidence and uniform forbidden errors
+  ---
+  duration_ms: 17.793417
+  type: 'test'
+  ...
+# Subtest: buyer evidence page renders structured evidence and clears on contract change
+ok 157 - buyer evidence page renders structured evidence and clears on contract change
+  ---
+  duration_ms: 13.003375
+  type: 'test'
+  ...
+# Subtest: credentials are rejected before workspace, audit or request persistence
+ok 158 - credentials are rejected before workspace, audit or request persistence
+  ---
+  duration_ms: 90.023333
+  type: 'test'
+  ...
+# Subtest: commits preserve original whitespace, newlines and empty files
+ok 159 - commits preserve original whitespace, newlines and empty files
+  ---
+  duration_ms: 18.237958
+  type: 'test'
+  ...
+# Subtest: permission audit distinguishes validated subjects, grants, revocations and expiry
+ok 160 - permission audit distinguishes validated subjects, grants, revocations and expiry
+  ---
+  duration_ms: 24.68775
+  type: 'test'
+  ...
+# Subtest: paused contracts allow explicit revocation of legacy delegation
+ok 161 - paused contracts allow explicit revocation of legacy delegation
+  ---
+  duration_ms: 38.425625
+  type: 'test'
+  ...
+# Subtest: paused contracts allow explicit revocation of expiring delegation
+ok 162 - paused contracts allow explicit revocation of expiring delegation
+  ---
+  duration_ms: 58.47325
+  type: 'test'
+  ...
+# Subtest: disputed contracts allow explicit revocation of legacy delegation
+ok 163 - disputed contracts allow explicit revocation of legacy delegation
+  ---
+  duration_ms: 33.8675
+  type: 'test'
+  ...
+# Subtest: disputed contracts allow explicit revocation of expiring delegation
+ok 164 - disputed contracts allow explicit revocation of expiring delegation
+  ---
+  duration_ms: 33.204375
+  type: 'test'
+  ...
+# Subtest: cancelled contracts allow explicit revocation of legacy delegation
+ok 165 - cancelled contracts allow explicit revocation of legacy delegation
+  ---
+  duration_ms: 23.874208
+  type: 'test'
+  ...
+# Subtest: cancelled contracts allow explicit revocation of expiring delegation
+ok 166 - cancelled contracts allow explicit revocation of expiring delegation
+  ---
+  duration_ms: 15.912791
+  type: 'test'
+  ...
+# (node:72105) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: ZIP rejects extra-field name overrides in either header
+ok 167 - ZIP rejects extra-field name overrides in either header
+  ---
+  duration_ms: 15.165708
+  type: 'test'
+  ...
+# Subtest: ZIP structure, CRC, encryption, traversal, symlinks, nested limits and expansion fail closed
+ok 168 - ZIP structure, CRC, encryption, traversal, symlinks, nested limits and expansion fail closed
+  ---
+  duration_ms: 5.168792
+  type: 'test'
+  ...
+# Subtest: real ZIP versions survive reopen; old confirmation and idempotency cannot accept rework; no Git provider
+ok 169 - real ZIP versions survive reopen; old confirmation and idempotency cannot accept rework; no Git provider
+  ---
+  duration_ms: 118.8285
+  type: 'test'
+  ...
+# Subtest: MCP ZIP uses business permissions and real bytes; rescan, revocation and dispute prevent delivery
+ok 170 - MCP ZIP uses business permissions and real bytes; rescan, revocation and dispute prevent delivery
+  ---
+  duration_ms: 93.787041
+  type: 'test'
+  ...
+# Subtest: formal HTTP APIs complete ZIP rework with independent organizations and concurrent submission
+ok 171 - formal HTTP APIs complete ZIP rework with independent organizations and concurrent submission
+  ---
+  duration_ms: 53.955292
+  type: 'test'
+  ...
+# (node:72109) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: ZIP web reviews bind displayed immutable version; stale page rejected; rework history and completion
+ok 172 - ZIP web reviews bind displayed immutable version; stale page rejected; rework history and completion
+  ---
+  duration_ms: 83.632708
+  type: 'test'
+  ...
+# Subtest: ZIP main flow hides Git controls and has labeled manual review
+ok 173 - ZIP main flow hides Git controls and has labeled manual review
+  ---
+  duration_ms: 0.421834
+  type: 'test'
+  ...
+# Subtest: workspace uploads same-name same-byte rework and refreshes milestones through bubbling input
+ok 174 - workspace uploads same-name same-byte rework and refreshes milestones through bubbling input
+  ---
+  duration_ms: 110.325875
+  type: 'test'
+  ...
+1..174
+# tests 174
+# suites 0
+# pass 174
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 18103.631375

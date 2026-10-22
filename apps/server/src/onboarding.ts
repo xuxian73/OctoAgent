@@ -30,7 +30,8 @@ async function executeRoute(
       for await (const chunk of request) {
         const bytes = Buffer.from(chunk);
         size += bytes.length;
-        if (size > 4096) throw new RequirementError("BODY_TOO_LARGE", 413);
+        // 2080 UTF-16 units can require 12480 bytes when JSON-escaped.
+        if (size > 16384) throw new RequirementError("BODY_TOO_LARGE", 413);
         chunks.push(bytes);
       }
       try {
@@ -79,7 +80,12 @@ async function executeRoute(
               ? error.code
               : "INTERNAL_ERROR",
           message:
-            error instanceof ForbiddenError ? "无权访问" : safeDiagnostic(error)
+            error instanceof ForbiddenError
+              ? "无权访问"
+              : error instanceof RequirementError &&
+                error.code === "BODY_TOO_LARGE"
+              ? "资料请求超过 16 KiB，请缩短资料后重试"
+              : safeDiagnostic(error)
         },
         request_id: requestId
       })
