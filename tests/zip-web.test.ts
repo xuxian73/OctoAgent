@@ -154,3 +154,186 @@ test("ZIP main flow hides Git controls and has labeled manual review", () => {
   assert.match(renderWorkspaces(), /aria-label="文件传输进度"/);
   assert.match(renderZipReview(), /id="zip-confirm" type="checkbox" required/);
 });
+
+test("workspace uploads same-name same-byte rework and refreshes milestones through bubbling input", async () => {
+  const { mountWorkspaces } = await import("../apps/web/src/workspaces.js");
+  const { controlledScanner } = await import("./fixtures/delivery.js");
+  const { zip } = await import("./fixtures/zip.js");
+  const f = setup();
+  f.activate();
+  const id = f.current().id;
+  const milestones = f.current().milestones.map(m => String(m.id));
+  const work = new Workspaces(f.db, f.auth);
+  const files = new Files(f.db, f.auth, controlledScanner);
+  for (const permission of ["artifact", "submit"])
+    work.command(f.buyer, id, {
+      action: "authorize",
+      version: 1,
+      requestKey: crypto.randomUUID(),
+      actorId: f.auth.identity(f.seller).id,
+      permission,
+      ttlMs: 900000,
+      confirmed: true
+    });
+  const documentEvents = new EventTarget();
+  class Control extends Element {
+    id = "";
+    tag = "";
+    files: File[] = [];
+    onclick?: () => void;
+    append(...nodes: Element[]) {
+      super.append(...nodes);
+      if (this.tag === "select" && !this.value)
+        this.value = nodes[0]?.value || "";
+    }
+    replaceChildren() {
+      super.replaceChildren();
+      this.value = "";
+    }
+    click() {
+      this.dispatchEvent(new Event("click"));
+    }
+    dispatchEvent(event: Event) {
+      const result = super.dispatchEvent(event);
+      if (event.type === "click") this.onclick?.();
+      if (event.bubbles) {
+        // Preserve the target while propagating to the document, as in the DOM.
+        Object.defineProperty(event, "target", { value: this });
+        documentEvents.dispatchEvent(event);
+      }
+      return result;
+    }
+  }
+  const elements = new Map(
+    [...renderWorkspaces().matchAll(/<(\w+)[^>]*\bid="([^"]+)"/g)].map(m => {
+      const element = new Control();
+      element.id = m[2]!;
+      element.tag = m[1]!;
+      return [element.id, element] as const;
+    })
+  );
+  const el = (id: string) => elements.get(id)!;
+  const root = ({
+    getElementById: (id: string) => elements.get(id),
+    createElement: () => new Control(),
+    addEventListener: documentEvents.addEventListener.bind(documentEvents)
+  } as unknown) as Document;
+  const originalFetch = globalThis.fetch;
+  const originalXHR = globalThis.XMLHttpRequest;
+  let actor = f.seller;
+  const errors: string[] = [];
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    try {
+      let data;
+      if (url === "/api/auth/me") data = { csrf: "synthetic" };
+      else if (init?.method === "POST") {
+        const body = JSON.parse(String(init.body));
+        data = url.includes("/workspaces/")
+          ? work.command(actor, id, body)
+          : f.contracts.command(actor, id, body);
+      } else if (url === "/api/contracts") data = [f.contracts.read(actor, id)];
+      else if (url.startsWith("/api/files"))
+        data = files.list(actor, "artifact", id);
+      else if (url.startsWith("/api/workspaces")) data = work.read(actor, id);
+      else data = f.contracts.read(actor, id);
+      return { ok: true, json: async () => ({ ok: true, data }) } as Response;
+    } catch (e) {
+      errors.push(String(e));
+      return {
+        ok: false,
+        status: 409,
+        json: async () => ({ error: { code: String(e) } })
+      } as Response;
+    }
+  }) as typeof fetch;
+  class Upload {
+    upload = {};
+    status = 201;
+    metadata = "";
+    onload = () => {};
+    open() {}
+    setRequestHeader(key: string, value: string) {
+      if (key === "X-File-Metadata") this.metadata = value;
+    }
+    send(file: File) {
+      void file.arrayBuffer().then(async bytes => {
+        const saved = files.upload(
+          actor,
+          JSON.parse(decodeURIComponent(this.metadata)),
+          new Uint8Array(bytes)
+        );
+        await files.scan(String(saved.id));
+        this.onload();
+      });
+    }
+  }
+  globalThis.XMLHttpRequest = (Upload as unknown) as typeof XMLHttpRequest;
+  const upload = async () => {
+    el("private-file").files = [
+      new File([new Uint8Array(zip("same bytes"))], "delivery.zip")
+    ];
+    el("file-upload").click();
+    await settle();
+    el("zip-refresh").click();
+    await settle();
+  };
+  const submit = async (summary: string) => {
+    el("zip-summary").value = summary;
+    el("zip-instructions").value = "阅读 README";
+    el("zip-issues").value = "无";
+    el("zip-form").dispatchEvent(new Event("submit", { bubbles: true }));
+    await settle();
+  };
+  try {
+    mountWorkspaces(root);
+    await settle();
+    assert.equal(el("contract").value, id, JSON.stringify(errors));
+    await upload();
+    const firstFile = el("zip-file").value;
+    assert.ok(firstFile);
+    assert.match(el("zip-file").children[0]!.textContent, /扫描时间.*SHA-256/);
+    await submit("第一版说明");
+    assert.equal(el("zip-file").children.length, 0);
+    actor = f.buyer;
+    el("load").click();
+    await settle();
+    el("zip-decision").value = "changes_requested";
+    el("zip-reason").value = "补充说明";
+    el("zip-confirm").checked = true;
+    el("zip-review-form").dispatchEvent(new Event("submit", { bubbles: true }));
+    await settle();
+    actor = f.seller;
+    el("load").click();
+    await settle();
+    await upload();
+    assert.equal(el("zip-file").children.length, 1);
+    const secondFile = el("zip-file").value;
+    assert.notEqual(secondFile, firstFile);
+    await submit("补充后的说明");
+    const history = f.contracts.read(actor, id).zipDeliveries;
+    assert.equal(history.length, 2);
+    assert.equal(history[0]!.checksum, history[1]!.checksum);
+    assert.equal(history[1]!.file_id, secondFile);
+    assert.equal(history[1]!.summary, "补充后的说明");
+    el("file-milestone").value = milestones[1]!;
+    el("file-milestone").dispatchEvent(new Event("input", { bubbles: true }));
+    await settle();
+    await upload();
+    const otherFile = el("zip-file").value;
+    el("file-milestone").value = milestones[0]!;
+    el("file-milestone").dispatchEvent(new Event("input", { bubbles: true }));
+    await settle();
+    assert.equal(el("file-list").children.length, 2);
+    assert.equal(el("zip-file").children.length, 0);
+    el("file-milestone").value = milestones[1]!;
+    el("file-milestone").dispatchEvent(new Event("input", { bubbles: true }));
+    await settle();
+    assert.equal(el("file-list").children.length, 1);
+    assert.equal(el("zip-file").value, otherFile);
+    assert.deepEqual(errors, []);
+  } finally {
+    globalThis.fetch = originalFetch;
+    globalThis.XMLHttpRequest = originalXHR;
+    f.db.close();
+  }
+});

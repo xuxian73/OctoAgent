@@ -303,10 +303,14 @@ export function mountWorkspaces(root: Document = document) {
     const source = ++sourceGeneration;
     const current = generation;
     try {
-      const files = await apiRequest(
-        `/api/files?kind=artifact&resourceId=${encodeURIComponent(
-          value("contract")
-        )}`
+      el("zip-file").replaceChildren();
+      const contract = encodeURIComponent(value("contract"));
+      const [files, delivery] = await Promise.all([
+        apiRequest(`/api/files?kind=artifact&resourceId=${contract}`),
+        apiRequest(`/api/contracts/${contract}`)
+      ]);
+      const usedFiles = new Set(
+        delivery.zipDeliveries.map((d: { file_id: string }) => d.file_id)
       );
       if (current !== generation) return;
       if (source !== sourceGeneration) return;
@@ -331,11 +335,16 @@ export function mountWorkspaces(root: Document = document) {
         el("source-file").append(option);
         if (
           file.mime === "application/zip" &&
-          file.milestone_id === value("file-milestone")
+          file.milestone_id === value("file-milestone") &&
+          !usedFiles.has(file.id)
         ) {
           const zip = root.createElement("option");
           zip.value = file.id;
-          zip.textContent = file.name + " · " + file.checksum;
+          zip.textContent = `${file.name} · ${
+            file.size
+          } 字节 · 扫描时间 ${new Date(file.scanned_at).toISOString()} · 文件 ${
+            file.id
+          } · SHA-256 ${file.checksum}`;
           el("zip-file").append(zip);
         }
       }

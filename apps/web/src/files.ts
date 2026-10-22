@@ -41,14 +41,10 @@ export function mountFiles(root: Document, binding: () => UploadBinding) {
     retired = true;
     clear();
   });
-  root.addEventListener("input", event => {
-    if (
-      ["contract", "draft-id", "file-milestone", "file-sha"].includes(
-        (event.target as HTMLElement).id
-      )
-    )
-      clear();
-  });
+  // Bind before the workspace's input handlers: clear first, then refresh.
+  // A document bubble listener would invalidate that newly started refresh.
+  for (const id of ["contract", "draft-id", "file-milestone", "file-sha"])
+    root.getElementById(id)?.addEventListener("input", clear);
   async function refresh() {
     const current = generation;
     const b = binding();
