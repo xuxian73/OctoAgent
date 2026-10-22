@@ -223,12 +223,20 @@ test("workspace uploads same-name same-byte rework and refreshes milestones thro
   const originalXHR = globalThis.XMLHttpRequest;
   let actor = f.seller;
   const errors: string[] = [];
+  let finishCompletion: (() => void) | undefined;
+  let completions = 0;
   globalThis.fetch = (async (url: string, init?: RequestInit) => {
     try {
       let data;
       if (url === "/api/auth/me") data = { csrf: "synthetic" };
       else if (init?.method === "POST") {
         const body = JSON.parse(String(init.body));
+        if (body.to === "completed") {
+          completions++;
+          await new Promise<void>(resolve => {
+            finishCompletion = resolve;
+          });
+        }
         data = url.includes("/workspaces/")
           ? work.command(actor, id, body)
           : f.contracts.command(actor, id, body);
@@ -350,6 +358,16 @@ test("workspace uploads same-name same-byte rework and refreshes milestones thro
     el("zip-complete").click();
     el("zip-complete").click();
     await settle();
+    assert.ok(finishCompletion);
+    el("file-milestone").value = milestones[0]!;
+    el("file-milestone").dispatchEvent(new Event("input"));
+    await settle();
+    assert.match(el("status").textContent, /已生效/);
+    el("zip-complete").click();
+    assert.equal(completions, 1);
+    finishCompletion();
+    await settle();
+    assert.equal(el("file-milestone").value, milestones[0]);
     assert.match(el("status").textContent, /已完成/);
     assert.match(el("contract").children[0]!.textContent, /completed/);
     assert.match(el("zip-review-status").textContent, /合同已完成/);

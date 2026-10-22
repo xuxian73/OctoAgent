@@ -22,12 +22,13 @@ test(
   async () => {
     const script = `
     let state = 'active', party = 'buyer', accepted = false, posts = 0;
-    const milestone = () => ({ id: 'm', title: 'ZIP', version: 1, status: accepted ? 'accepted' : 'planned' });
-    const contract = () => ({ id: 'c', status: state, version: 1, revision: 2, milestones: [milestone()], zipDeliveries: [], events: [], versions: [{ terms: { scope: '测试合同' } }] });
+    let finishCompletion;
+    const milestone = (id) => ({ id, title: 'ZIP', version: 1, status: accepted ? 'accepted' : 'planned' });
+    const contract = () => ({ id: 'c', status: state, version: 1, revision: 2, milestones: [milestone("m"), milestone("m2")], zipDeliveries: [], events: [], versions: [{ terms: { scope: '测试合同' } }] });
     window.fetch = async (url, init) => {
       let data;
       if (url === '/api/auth/me') data = { csrf: 'synthetic' };
-      else if (init?.method === 'POST') { posts++; state = 'completed'; data = contract(); }
+      else if (init?.method === 'POST') { posts++; await new Promise(resolve => { finishCompletion = resolve; }); state = 'completed'; data = contract(); }
       else if (url === '/api/contracts') data = [contract()];
       else if (url.startsWith('/api/files')) data = [];
       else if (url.startsWith('/api/workspaces')) data = { ...contract(), party, actors: [], branches: {}, commits: [], permissions: [] };
@@ -56,6 +57,15 @@ test(
       check(getComputedStyle(el('zip-complete')).display === 'inline-flex', 'eligible completion visible');
       el('zip-complete').click(); el('zip-complete').click(); await tick();
       check(posts === 1, 'single completion request');
+      el('file-milestone').value = 'm2';
+      el('file-milestone').dispatchEvent(new Event('input', { bubbles: true }));
+      hidden('zip-complete');
+      await tick();
+      check(el('zip-complete').disabled, 'completion stays disabled during milestone refresh');
+      el('zip-complete').click();
+      check(posts === 1, 'no duplicate while pending');
+      finishCompletion(); await tick();
+      check(el('file-milestone').value === 'm2', 'selected milestone preserved');
       check(el('status').textContent.includes('已完成'), 'parent status');
       check(el('contract').selectedOptions[0].textContent.includes('completed'), 'contract option');
       check(el('zip-review-status').textContent.includes('合同已完成'), 'success feedback');

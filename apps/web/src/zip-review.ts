@@ -15,11 +15,17 @@ export function mountZipReview(
   const el = (id: string) => root.getElementById(id)!;
   const value = (id: string) => (el(id) as HTMLInputElement).value;
   let generation = 0;
+  let selectedContract = contract();
+  let contractGeneration = 0;
   let snapshot: any;
   let target: any;
   let busy = false;
   function clear() {
     generation++;
+    if (selectedContract !== contract()) {
+      selectedContract = contract();
+      contractGeneration++;
+    }
     el("zip-review-status").textContent = "";
     snapshot = target = undefined;
     el("zip-history").replaceChildren();
@@ -120,6 +126,8 @@ export function mountZipReview(
     if (busy || !snapshot || (complete && el("zip-complete").hidden)) return;
     busy = true;
     const current = generation;
+    const commandContract = snapshot.id;
+    const commandContractGeneration = contractGeneration;
     let feedbackGeneration = current;
     let saved = false;
     (el("zip-complete") as HTMLButtonElement).disabled = true;
@@ -147,7 +155,13 @@ export function mountZipReview(
         }
       );
       saved = true;
-      if (current !== generation) return;
+      // Milestone refreshes must not discard a successful contract command.
+      // A contract switch still invalidates its response, including switching back.
+      if (
+        commandContract !== contract() ||
+        commandContractGeneration !== contractGeneration
+      )
+        return;
       const message = complete
         ? "合同已完成；未付款或部署。"
         : "验收处理已保存。";
