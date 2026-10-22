@@ -30,8 +30,18 @@ export async function apiRequest(path: string, method = "GET", body?: unknown) {
       await sessionHeaders();
     throw new Error(
       result.error.code === "FORBIDDEN"
-        ? "当前账号无权执行此操作"
-        : result.error.code
+        ? "当前账号无权执行此操作，授权可能已过期或撤销，请联系甲方重新授权后刷新"
+        : ({
+            FILE_SIZE_LIMIT: "文件超限，请缩小 ZIP 后重新上传",
+            FILE_SCAN_BLOCKED:
+              "扫描未放行，请刷新文件状态；扫描不可用时可重试扫描",
+            CONTRACT_NOT_ACTIVE:
+              "合同尚未生效、已暂停或处于争议，请返回合同处理后刷新",
+            STALE_DELIVERY: "交付版本已更新，请刷新并下载当前版本后重新确认",
+            STALE_VERSION: "页面版本已过期，请刷新后重新核对",
+            INVALID_TRANSITION:
+              "当前状态不允许此操作，请刷新并检查合同或里程碑状态"
+          } as Record<string, string>)[result.error.code] || result.error.code
     );
   }
   return result.data;

@@ -67,7 +67,9 @@ export function mountContracts(root: Document = document) {
       el("milestone").append(option);
     }
     const workspace = el("workspace") as HTMLAnchorElement;
-    workspace.hidden = current!.status !== "active";
+    workspace.hidden = !["active", "paused", "disputed", "completed"].includes(
+      current!.status
+    );
     workspace.href = "/workspaces?contract=" + encodeURIComponent(current!.id);
     (el("confirmed") as HTMLInputElement).checked = false;
     el("status").textContent =

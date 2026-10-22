@@ -242,7 +242,7 @@ test("workspace page loads seeded API evidence and clears it on tenant switch", 
           elements.load!.dispatchEvent(new Event("click"));
         });
       await load();
-      assert.match(elements.status!.textContent, /completed/);
+      assert.match(elements.status!.textContent, /已完成/);
       assert.equal(JSON.parse(elements.zipDeliveries!.textContent).length, 2);
       assert.equal(JSON.parse(elements.artifacts!.textContent).length, 0);
       assert.ok(

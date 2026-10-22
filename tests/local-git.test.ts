@@ -621,11 +621,11 @@ test("web selects contract and scanned source, initializes, branches, imports an
     };
     mountWorkspaces(root);
     await settle();
-    assert.match(el("status").textContent, /未初始化/);
+    assert.match(el("status").textContent, /ZIP 人工验收.*已生效/);
     assert.equal(el("contract").value, f.id);
     el("git-init").click();
     await settle();
-    assert.match(el("status").textContent, /真实本地 Git/);
+    assert.match(el("status").textContent, /ZIP 人工验收.*已生效/);
     el("git-branch").value = "web-delivery";
     el("branch-form").dispatchEvent(new Event("submit", { cancelable: true }));
     await settle();
