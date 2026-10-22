@@ -148,7 +148,7 @@ export function handleRequest(
           renderApplication(
             renderOnboarding(context?.sellerProfile),
             "onboarding",
-            []
+            (context?.projects || []) as ApplicationProject[]
           )
         );
         return;
@@ -159,7 +159,7 @@ export function handleRequest(
       }
       if (
         context?.sellerProfile &&
-        !new URL(request.url!, "http://localhost").searchParams.has(
+        !new URL(request.url!, "http://localhost").searchParams.get(
           "project"
         ) &&
         (path === "/market" ||

@@ -112,12 +112,14 @@ export function mountSeller(root: Document) {
         }
       );
       const result = await response.json();
-      if (!result.ok) throw new Error();
+      if (!result.ok) throw new Error(result.error?.code || "SAVE_FAILED");
       location.assign("/market");
     })()
-      .catch(() => {
+      .catch(error => {
         status.textContent =
-          "保存未完成，请检查资料后重试；若已完成，可刷新页面查看。";
+          error.message === "BODY_TOO_LARGE"
+            ? "资料请求超过 16 KiB，请缩短资料后重试。"
+            : "保存未完成：名称最多 80 字、能力与任务类型各 500 字、简介 1000 字；请检查后重试。";
       })
       .finally(() => {
         button.disabled = false;

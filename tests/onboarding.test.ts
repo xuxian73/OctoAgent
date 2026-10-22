@@ -851,3 +851,39 @@ test("seller form retries creation with the same key and saves edits without a p
     else Reflect.deleteProperty(globalThis, "location");
   }
 });
+
+test("Chinese seller field maxima fit the bounded JSON request and oversized bodies fail clearly", async () => {
+  const f = fixture();
+  try {
+    const profile = {
+      role: "seller",
+      displayName: "甲".repeat(80),
+      capabilities: "能".repeat(500),
+      taskTypes: "型".repeat(500),
+      bio: "介".repeat(1000)
+    };
+    assert.ok(Buffer.byteLength(JSON.stringify(profile)) > 4096);
+    assert.equal((await f.create("chinese-max", profile)).status, 200);
+    const excessive = await f.call("/api/onboarding/seller", "PUT", {
+      ...profile,
+      bio: "介".repeat(6000)
+    });
+    assert.equal(excessive.status, 413);
+    assert.match(excessive.body.error.message, /16 KiB/);
+    const overField = await f.call("/api/onboarding/seller", "PUT", {
+      ...profile,
+      bio: "介".repeat(1001)
+    });
+    assert.equal(overField.status, 400);
+    await f.create();
+    const page = await f.call("/onboarding");
+    assert.match(page.body, /href="\/console\?project=/);
+    for (const path of ["/market", "/market?project="]) {
+      const market = await f.call(path);
+      assert.equal(market.status, 200);
+      assert.match(market.body, /<option value="" selected>公开市场<\/option>/);
+    }
+  } finally {
+    f.db.close();
+  }
+});

@@ -765,3 +765,131 @@ test("one principal can be seller and buyer on different contracts without joini
     f.db.close();
   }
 });
+
+test("fresh registered organizations complete two byte-verified ZIP deliveries through business authorization without Git", async () => {
+  const { Files } = await import("../packages/database/src/files.js");
+  const { zip } = await import("./fixtures/zip.js");
+  const { controlledScanner } = await import("./fixtures/delivery.js");
+  const { createHash } = await import("node:crypto");
+  const f = await setup();
+  try {
+    const contracts = new Contracts(f.db, f.auth, () => 1000);
+    const work = new Workspaces(f.db, f.auth);
+    const files = new Files(f.db, f.auth, controlledScanner);
+    const task = f.create();
+    f.publish(task);
+    assert.equal(f.market.search(f.seller.token, "")[0]!.id, task);
+    const bid = f.market.draft(f.seller.token, task, {
+      ...proposal,
+      milestones: ["交付"]
+    });
+    f.market.submit(
+      f.seller.token,
+      bid.id,
+      f.market.preview(f.seller.token, bid.id).confirmation,
+      true
+    );
+    let contract = contracts.select(f.buyer.token, bid.id, true);
+    const id = contract.id;
+    let sequence = 0;
+    const command = (token: string, action: string, extra = {}) => {
+      contract = contracts.read(f.buyer.token, id);
+      return contracts.command(token, id, {
+        action,
+        version: contract.version,
+        revision: contract.revision,
+        requestKey: "fresh-zip-" + ++sequence,
+        confirmed: true,
+        reason: { code: "review", detail: "人工核对本版交付" },
+        ...extra
+      });
+    };
+    command(f.buyer.token, "transition", { to: "pending_confirmation" });
+    command(f.buyer.token, "confirm");
+    command(f.seller.token, "confirm");
+    assert.throws(() => contracts.read(f.competitor.token, id), ForbiddenError);
+    for (const permission of ["artifact", "submit"])
+      work.command(f.buyer.token, id, {
+        action: "authorize",
+        version: 1,
+        actorId: f.seller.id,
+        permission,
+        ttlMs: 900000,
+        confirmed: true,
+        requestKey: "fresh-zip-" + ++sequence
+      });
+    contract = contracts.read(f.buyer.token, id);
+    const milestoneId = String(contract.milestones[0]!.id);
+    const versions: { id: string; bytes: Buffer }[] = [];
+    for (const version of [1, 2]) {
+      const bytes = zip(`真实交付版本 ${version}`);
+      const file = files.upload(
+        f.seller.token,
+        {
+          kind: "artifact",
+          resourceId: id,
+          version: 1,
+          revision: 0,
+          milestoneId,
+          sha: "",
+          name: "delivery.zip",
+          mime: "application/zip",
+          requestKey: "fresh-zip-" + ++sequence
+        },
+        bytes
+      );
+      await files.scan(String(file.id));
+      versions.push({ id: String(file.id), bytes });
+      work.command(f.seller.token, id, {
+        action: "submit_milestone",
+        version: 1,
+        requestKey: "fresh-zip-" + ++sequence,
+        milestoneId,
+        fileId: file.id,
+        summary: `第 ${version} 版`,
+        instructions: "阅读 README",
+        knownIssues: "无"
+      });
+      for (const previous of versions) {
+        const downloaded = files.download(f.buyer.token, previous.id);
+        assert.deepEqual(downloaded.bytes, previous.bytes);
+        const checksum = createHash("sha256")
+          .update(previous.bytes)
+          .digest("hex");
+        assert.equal(downloaded.metadata.checksum, checksum);
+        assert.equal(downloaded.metadata.scan_checksum, checksum);
+        assert.equal(
+          downloaded.metadata.scanner,
+          "controlled-offline-test-adapter"
+        );
+        assert.equal(downloaded.metadata.scan_status, "clean");
+      }
+      assert.throws(
+        () => files.download(f.competitor.token, String(file.id)),
+        ForbiddenError
+      );
+      const current = contracts.read(f.buyer.token, id).zipDeliveries;
+      assert.equal(current.length, version);
+      command(f.buyer.token, "milestone", {
+        milestoneId,
+        deliveryId: current[current.length - 1]!.id,
+        to: version === 1 ? "changes_requested" : "accepted"
+      });
+    }
+    assert.notEqual(versions[0]!.id, versions[1]!.id);
+    assert.equal(
+      command(f.buyer.token, "transition", { to: "completed" }).status,
+      "completed"
+    );
+    assert.equal(
+      f.db
+        .prepare(
+          "SELECT count(*) n FROM memberships WHERE user_id=? AND organization_id=?"
+        )
+        .get(f.seller.id, f.project.organizationId!)!.n,
+      0
+    );
+  } finally {
+    f.db.close();
+  }
+});
